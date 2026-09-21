@@ -1,0 +1,19 @@
+{
+  "apl":"0.0.8",
+  "module":"v008_duplicate_effect",
+  "capabilities":["console.write"],
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"i64",
+      "effects":["console.write","console.write"],
+      "body":[
+        {"op":"const","id":"answer","type":"i64","value":42},
+        {"op":"print","args":["answer"]},
+        {"op":"return","value":"answer"}
+      ]
+    }
+  ]
+}
