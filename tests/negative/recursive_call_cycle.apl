@@ -1,0 +1,25 @@
+{
+  "apl":"0.0.2",
+  "module":"recursive_call_cycle",
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"i64",
+      "body":[
+        {"op":"call","id":"result","type":"i64","function":"loop","args":[]},
+        {"op":"return","value":"result"}
+      ]
+    },
+    {
+      "name":"loop",
+      "params":[],
+      "returns":"i64",
+      "body":[
+        {"op":"call","id":"again","type":"i64","function":"loop","args":[]},
+        {"op":"return","value":"again"}
+      ]
+    }
+  ]
+}
