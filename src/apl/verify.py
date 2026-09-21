@@ -239,7 +239,7 @@ def _verify_sequence(
     _expect(terminated, f"{where_prefix}: block must end with {terminator}")
 
 
-def _bind_result(ins: dict[str, Any], env: dict[str, Any], inferred_type: str, where: str) -> None:
+def _bind_result(ins: dict[str, Any], env: dict[str, Any], inferred_type: Any, where: str) -> None:
     result = ins.get("id")
     declared = ins.get("type")
     _expect(isinstance(result, str) and bool(result), f"{where}: result id is required")
@@ -482,7 +482,7 @@ def _verify_array_len(
 
 
 def _verify_return(
-    ins: dict[str, Any], env: dict[str, Any], returns: str, where: str
+    ins: dict[str, Any], env: dict[str, Any], returns: Any, where: str
 ) -> None:
     if returns == "unit":
         _expect("value" not in ins or ins.get("value") is None,
