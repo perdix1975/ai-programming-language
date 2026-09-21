@@ -1,6 +1,6 @@
 # APL Specification v0
 
-Status: **Draft 0.0.5**
+Status: **Draft 0.0.6**
 
 This document defines the executable v0 subset of APL. The purpose of v0 is to establish stable semantic machinery before adding richer effects, contracts, capabilities, concurrency, or native compilation.
 
@@ -14,7 +14,8 @@ The current reference implementation supports:
 - `0.0.2`: a strict extension adding typed function calls and structured `if` regions;
 - `0.0.3`: a strict extension adding defined integer division/remainder and ordered `i64` comparisons;
 - `0.0.4`: a strict extension adding bounded structured `repeat` regions;
-- `0.0.5`: a strict extension adding structured fixed-length array types and immutable array operations.
+- `0.0.5`: a strict extension adding structured fixed-length array types and immutable array operations;
+- `0.0.6`: a strict extension adding immutable structural record types and named-field access.
 
 Older programs retain their declared-version meaning. An operation is valid only when introduced by that program's declared version or an earlier one.
 
@@ -55,10 +56,11 @@ v0 defines:
 | `string` | Unicode string |
 | `unit` | no value |
 | `{"array": T, "len": N}` | immutable fixed-length array of `N` values of type `T` (0.0.5+) |
+| `{"record": {"field": T, ...}}` | immutable structural record with named fields (0.0.6+) |
 
 Integer constants are restricted to `[-2^63, 2^63-1]`.
 
-Structured array types are represented directly as JSON objects, not encoded inside strings. Array lengths are integer literals in `[0, 65_536]`. Array element types may themselves be valid non-`unit` types, enabling nested fixed arrays.
+Structured types are represented directly as JSON objects, not encoded inside strings. Array lengths are integer literals in `[0, 65_536]`. Array element types may themselves be valid non-`unit` types. Record field names are non-empty strings, each record may contain at most 256 fields, and field types may be any valid non-`unit` type. Arrays and records may therefore nest recursively.
 
 ## 5. SSA identity and regions
 
@@ -275,9 +277,71 @@ Two arrays may be compared with `eq` when their complete types are identical. Eq
 
 Structured array types may be used in function parameters, function return types, `if` results, and `repeat` carried values. Exact structural type equality is required; there are no implicit array conversions.
 
-`print` remains scalar-only in Draft 0.0.5.
+`print` remains scalar-only in Draft 0.0.6.
 
-## 11. Verification
+## 11. Draft 0.0.6 instructions
+
+### 11.1 structural record type
+
+A record type is represented as:
+
+```json
+{
+  "record": {
+    "name": "string",
+    "age": "i64"
+  }
+}
+```
+
+Record types are structural. Field order is not part of the type: two record descriptors with the same field names and exactly equal field types denote the same type regardless of JSON member order.
+
+Record field names must be non-empty strings. A record may contain at most 256 fields. Empty records are valid. Record fields may not have type `unit`.
+
+### 11.2 `record`
+
+Constructs an immutable record from existing SSA values.
+
+```json
+{
+  "op":"record",
+  "id":"person",
+  "type":{"record":{"name":"string","age":"i64"}},
+  "fields":{"name":"name_value","age":"age_value"}
+}
+```
+
+Verification requires the supplied field-name set to exactly equal the type's field-name set. Each field source must be an SSA id whose type exactly matches the declared field type. There are no optional, implicit, or extra fields in Draft 0.0.6.
+
+### 11.3 `record.get`
+
+Reads one field named by a compile-time string literal.
+
+```json
+{
+  "op":"record.get",
+  "id":"age",
+  "type":"i64",
+  "record":"person",
+  "field":"age"
+}
+```
+
+The source must be a record and the requested field must exist in its type. The result type is exactly the declared field type. Because field membership is checked by the verifier, a verified `record.get` does not perform a missing-field runtime trap.
+
+### 11.4 equality and canonical field order
+
+Records of exactly equal structural type may be compared with `eq`. Equality is recursive and field-wise. Runtime field storage order is not observable and does not affect equality.
+
+The reference interpreter stores record fields in deterministic lexicographic field-name order. This is an implementation strategy consistent with the semantics, not a user-visible ordering guarantee.
+
+### 11.5 nesting and function/region typing
+
+Records may contain arrays or other records, and arrays may contain records. Record types may be used in function parameters/returns, `if` results, and `repeat` carried values. Exact structural type equality is required throughout.
+
+Records are immutable values. Draft 0.0.6 defines no field mutation operation.
+
+## 12. Verification
 
 A conforming verifier rejects at least:
 
@@ -298,7 +362,7 @@ A conforming verifier rejects at least:
 
 Execution is defined only for verified programs.
 
-## 12. Canonical textual representation
+## 13. Canonical textual representation
 
 The v0 canonical encoding is JSON with:
 
@@ -312,17 +376,17 @@ Canonical identity is SHA-256 over the UTF-8 bytes of that encoding.
 
 This is an encoding identity, not yet a proof of semantic equivalence between differently structured programs.
 
-## 13. Reference implementation
+## 14. Reference implementation
 
 The Python implementation under `src/apl` is the executable reference for the current draft. Tests under `tests/` form a growing conformance suite.
 
-## 14. Deliberately absent
+## 15. Deliberately absent
 
 Not yet defined:
 
 - general recursion;
 - unbounded/general loops;
-- records and algebraic data types;
+- algebraic data types;
 - explicit trap values/handlers;
 - contracts and refinement types;
 - formal effect/capability declarations;
