@@ -1,6 +1,6 @@
 # APL Specification v0
 
-Status: **Draft 0.0.7**
+Status: **Draft 0.0.8**
 
 This document defines the executable v0 subset of APL. The purpose of v0 is to establish stable semantic machinery before adding richer effects, contracts, capabilities, concurrency, or native compilation.
 
@@ -16,7 +16,8 @@ The current reference implementation supports:
 - `0.0.4`: a strict extension adding bounded structured `repeat` regions;
 - `0.0.5`: a strict extension adding structured fixed-length array types and immutable array operations;
 - `0.0.6`: a strict extension adding immutable structural record types and named-field access;
-- `0.0.7`: a strict extension adding deterministic machine-readable traps and an explicit `trap` terminator.
+- `0.0.7`: a strict extension adding deterministic machine-readable traps and an explicit `trap` terminator;
+- `0.0.8`: a strict extension adding exact function effects, exact module capability declarations, and explicit host grants.
 
 Older programs retain their declared-version meaning. An operation is valid only when introduced by that program's declared version or an earlier one.
 
@@ -29,7 +30,8 @@ A program object contains:
 - `apl`: supported language version;
 - `module`: non-empty module name;
 - `entry`: entry function name;
-- `functions`: non-empty list of function objects.
+- `functions`: non-empty list of function objects;
+- `capabilities`: in Draft 0.0.8+, the exact sorted list of host capabilities required by the module.
 
 The entry function must exist and require zero parameters.
 
@@ -40,6 +42,7 @@ A function contains:
 - `name`: unique non-empty name;
 - `params`: ordered typed parameters;
 - `returns`: return type;
+- `effects`: in Draft 0.0.8+, the exact sorted list of host effects the function may perform directly or through calls;
 - `body`: ordered instruction list.
 
 Function declarations are visible module-wide, so a call may target a function appearing later in the file.
@@ -106,6 +109,8 @@ Reference rendering is:
 - `string`: string contents.
 
 Each call emits one output line.
+
+In Draft 0.0.8+, `print` contributes the `console.write` effect and requires the corresponding module capability plus a host runtime grant.
 
 ### 6.5 `return`
 
@@ -388,6 +393,7 @@ The `apl.*` namespace is reserved by the language/runtime. Draft 0.0.7 standardi
 | `apl.array_index_oob` | `array.get` index is negative or at least the array length |
 | `apl.repeat_negative_count` | `repeat` runtime count is negative |
 | `apl.repeat_count_exceeds_max` | `repeat` runtime count exceeds its declared static `max` |
+| `apl.capability_denied` | a 0.0.8+ execution lacks a required host capability grant |
 
 These codes replace no prior semantics: they assign stable identities to execution failures whose conditions were already defined in earlier drafts.
 
@@ -411,7 +417,93 @@ Effects completed before a trap remain completed. Instructions and effects after
 
 For runtime precondition traps that are specified to occur before entering a region, such as invalid `repeat` count, no body effect occurs before the trap.
 
-## 13. Verification
+## 13. Draft 0.0.8 effects and capabilities
+
+### 13.1 purpose
+
+Draft 0.0.8 separates three concepts that must not be conflated:
+
+1. **inferred effects**: host-visible effects reachable from a function body;
+2. **declared effects**: the function's exact static effect contract;
+3. **runtime grants**: capabilities the host actually authorizes for this execution.
+
+A declaration never grants authority by itself.
+
+### 13.2 function `effects`
+
+Every 0.0.8+ function contains an `effects` list.
+
+```json
+{
+  "name":"emit",
+  "params":[{"name":"message","type":"string"}],
+  "returns":"unit",
+  "effects":["console.write"],
+  "body":[
+    {"op":"print","args":["message"]},
+    {"op":"return"}
+  ]
+}
+```
+
+The list must:
+
+- contain only effects defined by the declared language version;
+- be lexicographically sorted;
+- contain no duplicates;
+- exactly equal the verifier-inferred effect set of the function.
+
+A pure function therefore declares `"effects":[]`.
+
+Effects propagate transitively through function calls. Structured regions contribute the union of effects in all statically possible branches/bodies, regardless of which branch is selected at runtime. This makes the effect contract conservative and execution-independent.
+
+Draft 0.0.8 defines one host effect:
+
+| Effect | Introduced by |
+|---|---|
+| `console.write` | `print` |
+
+### 13.3 module `capabilities`
+
+Every 0.0.8+ program contains a module-level `capabilities` list.
+
+```json
+"capabilities":["console.write"]
+```
+
+It must be the exact lexicographically sorted, duplicate-free union of every function's declared effects. Extra capabilities are rejected as over-declaration; missing capabilities are rejected as under-declaration.
+
+Thus a module's static authority footprint is explicit in canonical IR and participates in canonical identity/hash.
+
+### 13.4 runtime host grants
+
+Verification proves what authority a program declares it needs. Execution separately receives a set of capabilities granted by the host.
+
+Before executing the entry function of a 0.0.8+ program, the runtime verifies that every declared module capability is present in the host grant set. If any required capability is absent, execution traps before program effects begin with:
+
+```text
+apl.capability_denied
+```
+
+Hosts may grant a superset, but the program may use only effects present in its verified module declaration.
+
+The reference CLI grants capabilities explicitly with repeatable `--allow` arguments, for example:
+
+```text
+apl run examples/effects.apl --allow console.write
+```
+
+### 13.5 compatibility
+
+Programs declaring APL 0.0.1 through 0.0.7 retain their earlier semantics. They are not retroactively required to contain `effects` or `capabilities`, and their legacy `print` behavior is unchanged.
+
+### 13.6 security boundary
+
+Effect annotations are a static audit contract. Capability declarations are the module's requested authority. Host grants are the enforcement boundary.
+
+A conforming 0.0.8 runtime must not perform a protected host effect without the corresponding grant, even if the program has a syntactically valid capability declaration.
+
+## 14. Verification
 
 A conforming verifier rejects at least:
 
@@ -432,7 +524,7 @@ A conforming verifier rejects at least:
 
 Execution is defined only for verified programs.
 
-## 14. Canonical textual representation
+## 15. Canonical textual representation
 
 The v0 canonical encoding is JSON with:
 
@@ -446,11 +538,11 @@ Canonical identity is SHA-256 over the UTF-8 bytes of that encoding.
 
 This is an encoding identity, not yet a proof of semantic equivalence between differently structured programs.
 
-## 15. Reference implementation
+## 16. Reference implementation
 
 The Python implementation under `src/apl` is the executable reference for the current draft. Tests under `tests/` form a growing conformance suite.
 
-## 16. Deliberately absent
+## 17. Deliberately absent
 
 Not yet defined:
 
@@ -459,7 +551,7 @@ Not yet defined:
 - algebraic data types;
 - trap recovery, handlers, and resumable exceptions;
 - contracts and refinement types;
-- formal effect/capability declarations;
+- filesystem/network/database capability semantics;
 - file/network/database access;
 - concurrency;
 - resource bounds;
