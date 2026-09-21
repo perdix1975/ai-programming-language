@@ -23,7 +23,8 @@ The executable reference core includes:
 - deterministic execution traps with stable machine-readable codes, source locations, and an explicit `trap` terminator;
 - exact per-function host-effect annotations and exact module capability declarations;
 - explicit runtime capability grants, with `console.write` as the first protected host effect;
-- deterministic fixture-backed `fs.read_text` and `net.get_text` host operations;\n- deterministic `steps`, `output_lines`, and `host_reads` execution budgets with optional stricter host limits;
+- deterministic fixture-backed `fs.read_text` and `net.get_text` host operations;
+- deterministic `steps`, `output_lines`, and `host_reads` execution budgets with optional stricter host limits;
 - static rejection of direct and mutual recursion in Draft 0.0.2;
 - strict verifier;
 - deterministic canonical encoding and SHA-256 identity;
