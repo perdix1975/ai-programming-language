@@ -554,3 +554,214 @@ def test_v004_rejects_array_op():
         assert "structured types require APL 0.0.5" in str(exc)
     else:
         raise AssertionError("expected VerificationError")
+
+
+
+def person_type():
+    return {"record": {"name": "string", "age": "i64"}}
+
+
+def record_program():
+    p_type = person_type()
+    return {
+        "apl": "0.0.6",
+        "module": "records",
+        "entry": "main",
+        "functions": [
+            {
+                "name": "age_of",
+                "params": [{"name": "person", "type": p_type}],
+                "returns": "i64",
+                "body": [
+                    {
+                        "op": "record.get",
+                        "id": "age",
+                        "type": "i64",
+                        "record": "person",
+                        "field": "age",
+                    },
+                    {"op": "return", "value": "age"},
+                ],
+            },
+            {
+                "name": "main",
+                "params": [],
+                "returns": "i64",
+                "body": [
+                    {"op": "const", "id": "name", "type": "string", "value": "Ada"},
+                    {"op": "const", "id": "age", "type": "i64", "value": 37},
+                    {
+                        "op": "record",
+                        "id": "person",
+                        "type": p_type,
+                        "fields": {"age": "age", "name": "name"},
+                    },
+                    {
+                        "op": "call",
+                        "id": "answer",
+                        "type": "i64",
+                        "function": "age_of",
+                        "args": ["person"],
+                    },
+                    {"op": "return", "value": "answer"},
+                ],
+            },
+        ],
+    }
+
+
+def test_record_construction_get_and_function_signature():
+    p = record_program()
+    verify_program(p)
+    result = run_program(p, output=lambda _: None)
+    assert result.value == 37
+    assert result.type == "i64"
+
+
+def test_record_equality_is_structural_and_field_order_independent():
+    p_type = person_type()
+    p = {
+        "apl": "0.0.6",
+        "module": "record_eq",
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "bool",
+            "body": [
+                {"op": "const", "id": "name", "type": "string", "value": "Ada"},
+                {"op": "const", "id": "age", "type": "i64", "value": 37},
+                {
+                    "op": "record",
+                    "id": "a",
+                    "type": {"record": {"name": "string", "age": "i64"}},
+                    "fields": {"name": "name", "age": "age"},
+                },
+                {
+                    "op": "record",
+                    "id": "b",
+                    "type": {"record": {"age": "i64", "name": "string"}},
+                    "fields": {"age": "age", "name": "name"},
+                },
+                {"op": "eq", "id": "same", "type": "bool", "args": ["a", "b"]},
+                {"op": "return", "value": "same"},
+            ],
+        }],
+    }
+    result = run_program(p, output=lambda _: None)
+    assert result.value is True
+
+
+def test_record_constructor_requires_exact_field_set():
+    p = record_program()
+    p["functions"][1]["body"][2]["fields"] = {"name": "name"}
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "record fields must exactly match the record type" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_record_constructor_rejects_field_type_mismatch():
+    p = record_program()
+    p["functions"][1]["body"][2]["fields"]["age"] = "name"
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "record field 'age' has incompatible type" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_record_get_rejects_unknown_field():
+    p = record_program()
+    get_op = p["functions"][0]["body"][0]
+    get_op["field"] = "missing"
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "record field 'missing' does not exist" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_record_can_contain_fixed_array_field():
+    values_t = {"array": "i64", "len": 2}
+    box_t = {"record": {"values": values_t}}
+    p = {
+        "apl": "0.0.6",
+        "module": "nested_record",
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "body": [
+                {"op": "const", "id": "a", "type": "i64", "value": 4},
+                {"op": "const", "id": "b", "type": "i64", "value": 9},
+                {"op": "array", "id": "values", "type": values_t, "args": ["a", "b"]},
+                {
+                    "op": "record",
+                    "id": "box",
+                    "type": box_t,
+                    "fields": {"values": "values"},
+                },
+                {
+                    "op": "record.get",
+                    "id": "unboxed",
+                    "type": values_t,
+                    "record": "box",
+                    "field": "values",
+                },
+                {"op": "array.len", "id": "length", "type": "i64", "args": ["unboxed"]},
+                {"op": "return", "value": "length"},
+            ],
+        }],
+    }
+    result = run_program(p, output=lambda _: None)
+    assert result.value == 2
+
+
+def test_empty_record_is_valid():
+    empty_t = {"record": {}}
+    p = {
+        "apl": "0.0.6",
+        "module": "empty_record",
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "bool",
+            "body": [
+                {"op": "record", "id": "a", "type": empty_t, "fields": {}},
+                {"op": "record", "id": "b", "type": empty_t, "fields": {}},
+                {"op": "eq", "id": "same", "type": "bool", "args": ["a", "b"]},
+                {"op": "return", "value": "same"},
+            ],
+        }],
+    }
+    assert run_program(p, output=lambda _: None).value is True
+
+
+def test_record_field_cap():
+    too_many = {"record": {f"f{i}": "i64" for i in range(257)}}
+    p = record_program()
+    p["functions"][0]["params"][0]["type"] = too_many
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "record may contain at most 256 fields" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_v005_rejects_record_type():
+    p = record_program()
+    p["apl"] = "0.0.5"
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "record types require APL 0.0.6" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
