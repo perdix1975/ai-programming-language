@@ -1,6 +1,6 @@
 # APL Specification v0
 
-Status: **Draft 0.0.3**
+Status: **Draft 0.0.4**
 
 This document defines the executable v0 subset of APL. The purpose of v0 is to establish stable semantic machinery before adding richer effects, contracts, capabilities, concurrency, or native compilation.
 
@@ -12,7 +12,8 @@ The current reference implementation supports:
 
 - `0.0.1`: the original scalar/SSA semantic seed;
 - `0.0.2`: a strict extension adding typed function calls and structured `if` regions;
-- `0.0.3`: a strict extension adding defined integer division/remainder and ordered `i64` comparisons.
+- `0.0.3`: a strict extension adding defined integer division/remainder and ordered `i64` comparisons;
+- `0.0.4`: a strict extension adding bounded structured `repeat` regions.
 
 Older programs retain their declared-version meaning. An operation is valid only when introduced by that program's declared version or an earlier one.
 
@@ -65,7 +66,7 @@ Within a function or structured region:
 - an id must be defined before use;
 - parameter names share the function SSA namespace;
 - branch-local bindings do not leak out of the branch;
-- an `if` exposes only its own result id to the enclosing environment.
+- an `if` or `repeat` exposes only its own result id to the enclosing environment.
 
 ## 6. Core instructions
 
@@ -156,7 +157,7 @@ Rules:
 
 ### 7.3 `yield`
 
-`yield` is valid only as the terminator of an `if` branch region. It yields one SSA value to the enclosing `if`.
+`yield` is a structured-region terminator. In 0.0.2 it terminates an `if` branch; in 0.0.4 it also terminates a `repeat` body iteration. It yields one SSA value to the enclosing structured operation.
 
 It is not a function return.
 
@@ -185,7 +186,37 @@ The sign of a nonzero remainder therefore follows the dividend. Division by zero
 
 `lt`, `le`, `gt`, and `ge` each require two `i64` operands and produce `bool`. They use ordinary signed mathematical integer ordering.
 
-## 9. Verification
+## 9. Draft 0.0.4 instructions
+
+### 9.1 bounded `repeat`
+
+`repeat` is a value-producing structured iteration region with an explicit static execution bound.
+
+```json
+{
+  "op":"repeat",
+  "id":"factorial",
+  "type":"i64",
+  "count":"n",
+  "max":10,
+  "init":"one",
+  "index":"i",
+  "carry":"acc",
+  "body":[
+    {"op":"add","id":"factor","type":"i64","args":["i","one"]},
+    {"op":"mul","id":"next","type":"i64","args":["acc","factor"]},
+    {"op":"yield","value":"next"}
+  ]
+}
+```
+
+Verification requires that `count` is `i64`; `max` is an integer literal in `[0, 1_000_000]`; `init` is non-`unit`; the result type equals the `init` type; `index` and `carry` are distinct region-local names that do not collide with outer SSA ids; and the body ends in a `yield` of the carried type.
+
+Execution first validates the runtime count. A negative count, or a count greater than `max`, traps before any body effect. Otherwise the body executes exactly `count` times. The iteration index is zero-based. The first `carry` is `init`; each body `yield` becomes the next carry. Each iteration receives a fresh region-local SSA environment. The final carry is the operation result. For `count = 0`, the body does not execute and the result is exactly `init`.
+
+Because every verified `repeat` contains a statically capped `max`, it cannot execute an unbounded number of iterations.
+
+## 10. Verification
 
 A conforming verifier rejects at least:
 
@@ -206,7 +237,7 @@ A conforming verifier rejects at least:
 
 Execution is defined only for verified programs.
 
-## 10. Canonical textual representation
+## 11. Canonical textual representation
 
 The v0 canonical encoding is JSON with:
 
@@ -220,11 +251,11 @@ Canonical identity is SHA-256 over the UTF-8 bytes of that encoding.
 
 This is an encoding identity, not yet a proof of semantic equivalence between differently structured programs.
 
-## 11. Reference implementation
+## 12. Reference implementation
 
 The Python implementation under `src/apl` is the executable reference for the current draft. Tests under `tests/` form a growing conformance suite.
 
-## 12. Deliberately absent
+## 13. Deliberately absent
 
 Not yet defined:
 

@@ -17,7 +17,7 @@
 - [x] typed function calls and forward references
 - [x] structured value-producing `if`
 - [x] acyclic call-graph verification
-- [ ] bounded/structured loops
+- [x] bounded structured `repeat` with explicit static maximum
 - [x] division/remainder and ordered comparisons with defined edge semantics
 - [ ] arrays/records
 - [ ] explicit error/trap model

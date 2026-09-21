@@ -32,6 +32,7 @@ jobs:
           apl verify examples/hello.apl
           apl verify examples/functions_if.apl
           apl verify examples/arithmetic.apl
+          apl verify examples/repeat_factorial.apl
       - name: Run examples
         run: |
           output="$(apl run examples/hello.apl)"
@@ -40,3 +41,5 @@ jobs:
           test "$output" = $'42\n[return i64] 42'
           output="$(apl run examples/arithmetic.apl)"
           test "$output" = $'-2\n-1\ntrue\n[return i64] -2'
+          output="$(apl run examples/repeat_factorial.apl)"
+          test "$output" = $'120\n[return i64] 120'

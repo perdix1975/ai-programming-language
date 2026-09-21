@@ -292,3 +292,104 @@ def test_v002_rejects_v003_ops():
         assert "requires APL 0.0.3" in str(exc)
     else:
         raise AssertionError("expected VerificationError")
+
+
+
+def repeat_program(count=5, maximum=10):
+    return {
+        "apl": "0.0.4",
+        "module": "repeat",
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "body": [
+                {"op": "const", "id": "n", "type": "i64", "value": count},
+                {"op": "const", "id": "one", "type": "i64", "value": 1},
+                {
+                    "op": "repeat",
+                    "id": "factorial",
+                    "type": "i64",
+                    "count": "n",
+                    "max": maximum,
+                    "init": "one",
+                    "index": "i",
+                    "carry": "acc",
+                    "body": [
+                        {"op": "add", "id": "factor", "type": "i64", "args": ["i", "one"]},
+                        {"op": "mul", "id": "next", "type": "i64", "args": ["acc", "factor"]},
+                        {"op": "yield", "value": "next"},
+                    ],
+                },
+                {"op": "return", "value": "factorial"},
+            ],
+        }],
+    }
+
+
+def test_bounded_repeat_factorial_and_zero_based_index():
+    result = run_program(repeat_program(), output=lambda _: None)
+    assert result.value == 120
+    assert result.type == "i64"
+
+
+def test_repeat_zero_count_returns_init():
+    result = run_program(repeat_program(count=0), output=lambda _: None)
+    assert result.value == 1
+
+
+def test_repeat_count_above_max_traps_before_body_effects():
+    p = repeat_program(count=3, maximum=2)
+    body = p["functions"][0]["body"][2]["body"]
+    body.insert(0, {"op": "print", "args": ["acc"]})
+    lines = []
+    try:
+        run_program(p, output=lines.append)
+    except ExecutionError as exc:
+        assert "exceeds declared max 2" in str(exc)
+        assert lines == []
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_repeat_negative_count_traps():
+    try:
+        run_program(repeat_program(count=-1), output=lambda _: None)
+    except ExecutionError as exc:
+        assert "must be non-negative" in str(exc)
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_repeat_rejects_excessive_static_max():
+    p = repeat_program()
+    p["functions"][0]["body"][2]["max"] = 1_000_001
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "repeat max must be in [0, 1000000]" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_repeat_region_names_cannot_shadow_outer_ssa():
+    p = repeat_program()
+    p["functions"][0]["body"][2]["carry"] = "one"
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "collides with an outer SSA id" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_v003_rejects_repeat():
+    p = repeat_program()
+    p["apl"] = "0.0.3"
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "repeat requires APL 0.0.4" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
