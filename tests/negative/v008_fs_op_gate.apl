@@ -1,0 +1,19 @@
+{
+  "apl":"0.0.8",
+  "module":"v008_fs_op_gate",
+  "capabilities":[],
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"string",
+      "effects":[],
+      "body":[
+        {"op":"const","id":"path","type":"string","value":"/x"},
+        {"op":"fs.read_text","id":"value","type":"string","args":["path"]},
+        {"op":"return","value":"value"}
+      ]
+    }
+  ]
+}
