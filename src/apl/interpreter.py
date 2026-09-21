@@ -34,14 +34,14 @@ def _trunc_div(a: int, b: int, where: str) -> int:
     if b == 0:
         raise ExecutionError("apl.division_by_zero", "division by zero", where=where)
     if a == -(2**63) and b == -1:
-        raise ExecutionError(f"{where}: signed i64 overflow")
+        raise ExecutionError("apl.i64_overflow", "signed i64 overflow", where=where)
     q = abs(a) // abs(b)
     return -q if (a < 0) != (b < 0) else q
 
 
 def _trunc_rem(a: int, b: int, where: str) -> int:
     if b == 0:
-        raise ExecutionError(f"{where}: division by zero")
+        raise ExecutionError("apl.division_by_zero", "division by zero", where=where)
     if a == -(2**63) and b == -1:
         return 0
     q = _trunc_div(a, b, where)
