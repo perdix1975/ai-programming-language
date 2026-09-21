@@ -1,34 +1,47 @@
 # APL Specification v0
 
-Status: **Draft 0.0.1**
+Status: **Draft 0.0.2**
 
-This document defines the first executable subset of APL. It is deliberately small. The purpose of v0 is to establish stable semantic machinery before adding richer control flow, effects, contracts, capabilities, concurrency, or native compilation.
+This document defines the executable v0 subset of APL. The purpose of v0 is to establish stable semantic machinery before adding richer effects, contracts, capabilities, concurrency, or native compilation.
 
-## 1. Program representation
+## 1. Versioning
+
+The `apl` field is part of every program.
+
+The current reference implementation supports:
+
+- `0.0.1`: the original scalar/SSA semantic seed;
+- `0.0.2`: a strict extension adding typed function calls and structured `if` regions.
+
+A 0.0.1 program must retain its 0.0.1 meaning. Operations introduced in 0.0.2 are invalid when the program declares 0.0.1.
+
+## 2. Program representation
 
 The normative v0 interchange format is UTF-8 JSON.
 
-A program is an object with:
+A program object contains:
 
-- `apl`: language version; v0 requires `"0.0.1"`.
-- `module`: non-empty module name.
-- `entry`: name of the entry function.
+- `apl`: supported language version;
+- `module`: non-empty module name;
+- `entry`: entry function name;
 - `functions`: non-empty list of function objects.
 
-The v0 entry function must have no parameters.
+The entry function must exist and require zero parameters.
 
-## 2. Function representation
+## 3. Function representation
 
 A function contains:
 
-- `name`: unique non-empty function name.
-- `params`: ordered list of parameters.
-- `returns`: return type.
-- `body`: ordered list of instructions.
+- `name`: unique non-empty name;
+- `params`: ordered typed parameters;
+- `returns`: return type;
+- `body`: ordered instruction list.
 
-Every v0 body terminates with `return`. Instructions after a terminator are invalid.
+Function declarations are visible module-wide, so a call may target a function appearing later in the file.
 
-## 3. Types
+Draft 0.0.2 rejects direct and mutual recursion. The module call graph must be acyclic.
+
+## 4. Types
 
 v0 defines:
 
@@ -39,91 +52,135 @@ v0 defines:
 | `string` | Unicode string |
 | `unit` | no value |
 
-Integer constants must be in the inclusive range `[-2^63, 2^63-1]`.
+Integer constants are restricted to `[-2^63, 2^63-1]`.
 
-## 4. SSA identity
+## 5. SSA identity and regions
 
-Value-producing instructions bind an `id`. Within a function:
+Value-producing instructions bind an `id`.
 
-- an id is defined at most once;
+Within a function or structured region:
+
+- an id is defined at most once in that environment;
 - an id must be defined before use;
-- parameter names share the same namespace as instruction ids.
+- parameter names share the function SSA namespace;
+- branch-local bindings do not leak out of the branch;
+- an `if` exposes only its own result id to the enclosing environment.
 
-This v0 rule makes data dependencies explicit and removes mutable local variables from the trusted core.
+## 6. Core instructions
 
-## 5. Instructions
+### 6.1 `const`
 
-### 5.1 `const`
-
-Creates an `i64`, `bool`, or `string` value.
+Creates an `i64`, `bool`, or `string`.
 
 ```json
 {"op":"const","id":"x","type":"i64","value":42}
 ```
 
-### 5.2 `add`, `sub`, `mul`
+### 6.2 `add`, `sub`, `mul`
 
-Each requires exactly two `i64` operands and produces an `i64`.
-
-```json
-{"op":"add","id":"c","type":"i64","args":["a","b"]}
-```
+Require two `i64` operands and produce `i64`.
 
 Signed overflow has defined behavior: execution traps with an APL execution error. Wraparound is not implicit.
 
-### 5.3 `eq`
+### 6.3 `eq`
 
 Requires two operands of identical, non-`unit` type and produces `bool`.
 
-```json
-{"op":"eq","id":"same","type":"bool","args":["a","b"]}
-```
+### 6.4 `print`
 
-### 5.4 `print`
+An explicit observable effect accepting one value id.
 
-Print is the first explicit observable effect in v0. It accepts exactly one value id.
-
-```json
-{"op":"print","args":["x"]}
-```
-
-Reference textual rendering is:
+Reference rendering is:
 
 - `bool`: `true` or `false`;
 - `i64`: base-10 integer;
 - `string`: string contents.
 
-Each reference `print` call emits one output line.
+Each call emits one output line.
 
-### 5.5 `return`
+### 6.5 `return`
 
-A non-`unit` function returns exactly one previously defined value whose type exactly matches the function return type.
+Terminates a function. A non-`unit` function returns one previously defined value of exactly the declared function return type. A `unit` function returns no value.
+
+## 7. Draft 0.0.2 instructions
+
+### 7.1 `call`
+
+A call names a module function and supplies SSA ids as arguments.
 
 ```json
-{"op":"return","value":"answer"}
+{
+  "op":"call",
+  "id":"answer",
+  "type":"i64",
+  "function":"choose",
+  "args":["flag","x","y"]
+}
 ```
 
-A `unit` function returns without a value.
+Verification requires:
 
-## 6. Verification
+- target function exists;
+- argument count matches exactly;
+- each argument type matches its parameter type exactly;
+- a non-`unit` result binds an id with the exact declared return type;
+- a `unit` result binds no id;
+- the complete module call graph remains acyclic.
 
-A conforming v0 verifier must reject at least:
+### 7.2 structured `if`
 
-- unknown language versions;
+Draft 0.0.2 `if` is a value-producing structured region.
+
+```json
+{
+  "op":"if",
+  "id":"selected",
+  "type":"i64",
+  "cond":"flag",
+  "then":[{"op":"yield","value":"a"}],
+  "else":[{"op":"yield","value":"b"}]
+}
+```
+
+Rules:
+
+- `cond` must reference `bool`;
+- `type` must currently be non-`unit`;
+- both branches are non-empty instruction lists;
+- each branch terminates with `yield`;
+- both yielded values must exactly match the `if` result type;
+- only the selected branch executes;
+- branch-local SSA bindings do not escape;
+- effects in the unselected branch do not occur.
+
+### 7.3 `yield`
+
+`yield` is valid only as the terminator of an `if` branch region. It yields one SSA value to the enclosing `if`.
+
+It is not a function return.
+
+## 8. Verification
+
+A conforming verifier rejects at least:
+
+- unsupported versions;
 - malformed program/function/instruction structures;
 - duplicate functions;
-- missing entry function;
+- missing or parameterized entry functions;
 - unsupported types or operations;
 - duplicate SSA ids;
 - use-before-definition;
-- operand type mismatches;
-- result type mismatches;
-- missing or invalid terminators;
-- return type mismatches.
+- operand/result type mismatches;
+- invalid block terminators;
+- return/yield type mismatches;
+- unknown function targets;
+- call arity/type mismatches;
+- recursive call cycles;
+- use of 0.0.2 operations from a 0.0.1 program.
 
 Execution is defined only for verified programs.
 
-## 7. Canonical textual representation
+## 9. Canonical textual representation
 
 The v0 canonical encoding is JSON with:
 
@@ -135,28 +192,29 @@ The v0 canonical encoding is JSON with:
 
 Canonical identity is SHA-256 over the UTF-8 bytes of that encoding.
 
-This is an **encoding identity**, not yet a proof of semantic equivalence between differently structured programs.
+This is an encoding identity, not yet a proof of semantic equivalence between differently structured programs.
 
-## 8. Reference implementation
+## 10. Reference implementation
 
-The Python interpreter in `src/apl` is the executable reference for Draft 0.0.1. Tests in `tests/` are conformance examples, but the specification remains the intended normative definition.
+The Python implementation under `src/apl` is the executable reference for the current draft. Tests under `tests/` form a growing conformance suite.
 
-## 9. Deliberately absent from v0
+## 11. Deliberately absent
 
-The following are planned but not defined yet:
+Not yet defined:
 
-- calls and multi-function execution;
-- branches and loops;
-- collections and structured types;
-- arithmetic beyond add/sub/mul;
+- general recursion;
+- loops/iteration;
+- division and ordered comparisons;
+- arrays, records, algebraic data types;
+- explicit trap values/handlers;
 - contracts and refinement types;
-- explicit capability/effect system;
+- formal effect/capability declarations;
 - file/network/database access;
 - concurrency;
 - resource bounds;
-- modules/imports;
+- module imports;
 - binary canonical IR;
-- optimizer and compiler backends;
+- optimizer/compiler backends;
 - AI-generated primitives.
 
-They must not be inferred from conventional language behavior until formally specified.
+Conventional-language behavior for these features must not be assumed until formally specified.

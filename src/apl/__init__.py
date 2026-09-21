@@ -1,4 +1,6 @@
 """APL reference implementation."""
 
-LANGUAGE_VERSION = "0.0.1"
-__version__ = "0.0.1"
+LATEST_LANGUAGE_VERSION = "0.0.2"
+SUPPORTED_LANGUAGE_VERSIONS = {"0.0.1", "0.0.2"}
+LANGUAGE_VERSION = LATEST_LANGUAGE_VERSION
+__version__ = "0.0.2"

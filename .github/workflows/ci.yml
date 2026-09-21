@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ["main", "bootstrap/**"]
+    branches: ["main", "bootstrap/**", "feature/**"]
   pull_request:
 
 permissions:
@@ -27,9 +27,13 @@ jobs:
           python -m pip install -e .
       - name: Test
         run: pytest -q
-      - name: Verify example
-        run: apl verify examples/hello.apl
-      - name: Run example
+      - name: Verify examples
+        run: |
+          apl verify examples/hello.apl
+          apl verify examples/functions_if.apl
+      - name: Run examples
         run: |
           output="$(apl run examples/hello.apl)"
+          test "$output" = $'42\n[return i64] 42'
+          output="$(apl run examples/functions_if.apl)"
           test "$output" = $'42\n[return i64] 42'
