@@ -26,17 +26,59 @@ def run_program(
 ) -> ExecutionResult:
     verify_program(program)
     functions = {fn["name"]: fn for fn in program["functions"]}
-    fn = functions[program["entry"]]
+    return _execute_function(
+        functions=functions,
+        function_name=program["entry"],
+        arguments=[],
+        output=output,
+    )
 
-    if fn["params"]:
-        raise ExecutionError("v0 entry functions cannot require parameters")
 
-    env: dict[str, Any] = {}
-    types: dict[str, str] = {p["name"]: p["type"] for p in fn["params"]}
+def _execute_function(
+    *,
+    functions: dict[str, dict[str, Any]],
+    function_name: str,
+    arguments: list[Any],
+    output: Callable[[str], None],
+) -> ExecutionResult:
+    fn = functions[function_name]
+    env = {param["name"]: value for param, value in zip(fn["params"], arguments)}
+    types = {param["name"]: param["type"] for param in fn["params"]}
 
-    for index, ins in enumerate(fn["body"]):
+    return _execute_sequence(
+        instructions=fn["body"],
+        env=env,
+        types=types,
+        functions=functions,
+        function_name=function_name,
+        output=output,
+        terminator="return",
+        result_type=fn["returns"],
+        where_prefix=function_name,
+    )
+
+
+def _execute_sequence(
+    *,
+    instructions: list[dict[str, Any]],
+    env: dict[str, Any],
+    types: dict[str, str],
+    functions: dict[str, dict[str, Any]],
+    function_name: str,
+    output: Callable[[str], None],
+    terminator: str,
+    result_type: str,
+    where_prefix: str,
+) -> ExecutionResult:
+    for index, ins in enumerate(instructions):
         op = ins["op"]
-        where = f"{fn['name']}[{index}]"
+        where = f"{where_prefix}[{index}]"
+
+        if op == terminator:
+            if result_type == "unit":
+                return ExecutionResult(None, "unit")
+            name = ins["value"]
+            return ExecutionResult(env[name], types[name])
 
         if op == "const":
             env[ins["id"]] = ins["value"]
@@ -51,17 +93,40 @@ def run_program(
             env[ins["id"]] = a == b
             types[ins["id"]] = "bool"
         elif op == "print":
-            value = env[ins["args"][0]]
-            if isinstance(value, bool):
-                output("true" if value else "false")
-            else:
-                output(str(value))
-        elif op == "return":
-            if fn["returns"] == "unit":
-                return ExecutionResult(None, "unit")
-            name = ins["value"]
-            return ExecutionResult(env[name], types[name])
-        else:  # verifier should make this unreachable
+            output(_render(env[ins["args"][0]]))
+        elif op == "call":
+            target = ins["function"]
+            result = _execute_function(
+                functions=functions,
+                function_name=target,
+                arguments=[env[name] for name in ins["args"]],
+                output=output,
+            )
+            if result.type != "unit":
+                env[ins["id"]] = result.value
+                types[ins["id"]] = result.type
+        elif op == "if":
+            label = "then" if env[ins["cond"]] else "else"
+            branch_result = _execute_sequence(
+                instructions=ins[label],
+                env=dict(env),
+                types=dict(types),
+                functions=functions,
+                function_name=function_name,
+                output=output,
+                terminator="yield",
+                result_type=ins["type"],
+                where_prefix=f"{where}.{label}",
+            )
+            env[ins["id"]] = branch_result.value
+            types[ins["id"]] = branch_result.type
+        else:
             raise ExecutionError(f"{where}: unsupported op '{op}'")
 
-    raise ExecutionError("verified program terminated without return")
+    raise ExecutionError(f"{where_prefix}: verified block terminated without {terminator}")
+
+
+def _render(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
