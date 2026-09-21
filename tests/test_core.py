@@ -203,6 +203,8 @@ def test_i64_overflow_is_defined_as_runtime_error():
     try:
         run_program(p, output=lambda _: None)
     except ExecutionError as exc:
+        assert exc.code == "apl.i64_overflow"
+        assert exc.where == "main[2]"
         assert "overflow" in str(exc)
     else:
         raise AssertionError("expected ExecutionError")
@@ -251,6 +253,7 @@ def test_division_by_zero_is_defined_trap():
     try:
         run_program(binary_program("div", 1, 0), output=lambda _: None)
     except ExecutionError as exc:
+        assert exc.code == "apl.division_by_zero"
         assert "division by zero" in str(exc)
     else:
         raise AssertionError("expected ExecutionError")
@@ -260,6 +263,7 @@ def test_division_min_by_minus_one_overflows():
     try:
         run_program(binary_program("div", -(2**63), -1), output=lambda _: None)
     except ExecutionError as exc:
+        assert exc.code == "apl.i64_overflow"
         assert "overflow" in str(exc)
     else:
         raise AssertionError("expected ExecutionError")
@@ -347,6 +351,7 @@ def test_repeat_count_above_max_traps_before_body_effects():
     try:
         run_program(p, output=lines.append)
     except ExecutionError as exc:
+        assert exc.code == "apl.repeat_count_exceeds_max"
         assert "exceeds declared max 2" in str(exc)
         assert lines == []
     else:
@@ -357,6 +362,7 @@ def test_repeat_negative_count_traps():
     try:
         run_program(repeat_program(count=-1), output=lambda _: None)
     except ExecutionError as exc:
+        assert exc.code == "apl.repeat_negative_count"
         assert "must be non-negative" in str(exc)
     else:
         raise AssertionError("expected ExecutionError")
@@ -450,6 +456,7 @@ def test_array_get_out_of_bounds_traps():
     try:
         run_program(p, output=lambda _: None)
     except ExecutionError as exc:
+        assert exc.code == "apl.array_index_oob"
         assert "array index 3 out of bounds for length 3" in str(exc)
     else:
         raise AssertionError("expected ExecutionError")
@@ -461,6 +468,7 @@ def test_array_get_negative_index_traps():
     try:
         run_program(p, output=lambda _: None)
     except ExecutionError as exc:
+        assert exc.code == "apl.array_index_oob"
         assert "array index -1 out of bounds for length 3" in str(exc)
     else:
         raise AssertionError("expected ExecutionError")
@@ -763,5 +771,158 @@ def test_v005_rejects_record_type():
         verify_program(p)
     except VerificationError as exc:
         assert "record types require APL 0.0.6" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+
+def explicit_trap_program(code="app.invalid_state", message="invalid state"):
+    return {
+        "apl": "0.0.7",
+        "module": "explicit_trap",
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "body": [
+                {"op": "trap", "code": code, "message": message},
+            ],
+        }],
+    }
+
+
+def test_explicit_trap_is_valid_function_terminator():
+    p = explicit_trap_program()
+    verify_program(p)
+    try:
+        run_program(p, output=lambda _: None)
+    except ExecutionError as exc:
+        assert exc.code == "app.invalid_state"
+        assert exc.message == "invalid state"
+        assert exc.where == "main[0]"
+        assert str(exc) == "[app.invalid_state] main[0]: invalid state"
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_trap_can_terminate_one_if_branch():
+    p = {
+        "apl": "0.0.7",
+        "module": "trap_if",
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "body": [
+                {"op": "const", "id": "cond", "type": "bool", "value": False},
+                {
+                    "op": "if",
+                    "id": "result",
+                    "type": "i64",
+                    "cond": "cond",
+                    "then": [
+                        {"op": "trap", "code": "app.unreachable", "message": "bad branch"}
+                    ],
+                    "else": [
+                        {"op": "const", "id": "value", "type": "i64", "value": 42},
+                        {"op": "yield", "value": "value"},
+                    ],
+                },
+                {"op": "return", "value": "result"},
+            ],
+        }],
+    }
+    assert run_program(p, output=lambda _: None).value == 42
+
+
+def test_selected_trap_branch_aborts():
+    p = {
+        "apl": "0.0.7",
+        "module": "trap_if_selected",
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "body": [
+                {"op": "const", "id": "cond", "type": "bool", "value": True},
+                {
+                    "op": "if",
+                    "id": "result",
+                    "type": "i64",
+                    "cond": "cond",
+                    "then": [
+                        {"op": "trap", "code": "app.selected", "message": "selected trap"}
+                    ],
+                    "else": [
+                        {"op": "const", "id": "value", "type": "i64", "value": 42},
+                        {"op": "yield", "value": "value"},
+                    ],
+                },
+                {"op": "return", "value": "result"},
+            ],
+        }],
+    }
+    try:
+        run_program(p, output=lambda _: None)
+    except ExecutionError as exc:
+        assert exc.code == "app.selected"
+        assert exc.where == "main[1].then[0]"
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_explicit_trap_cannot_use_reserved_apl_namespace():
+    p = explicit_trap_program(code="apl.division_by_zero")
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "namespace 'apl.*' is reserved" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_explicit_trap_code_has_canonical_syntax():
+    p = explicit_trap_program(code="Bad Code")
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "trap code must match" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_explicit_trap_message_is_bounded():
+    p = explicit_trap_program(message="x" * 513)
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "trap message length must be in [1, 512]" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_instruction_after_trap_is_rejected():
+    p = explicit_trap_program()
+    p["functions"][0]["body"].append(
+        {"op": "const", "id": "x", "type": "i64", "value": 1}
+    )
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "instruction appears after terminator" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_v006_rejects_explicit_trap():
+    p = explicit_trap_program()
+    p["apl"] = "0.0.6"
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "trap requires APL 0.0.7" in str(exc)
     else:
         raise AssertionError("expected VerificationError")
