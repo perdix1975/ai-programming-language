@@ -1317,6 +1317,19 @@ def test_deterministic_host_copies_fixture_mappings():
     assert host.get_text("https://example.test") == "before"
 
 
+def test_deterministic_host_direct_constructor_validation():
+    for files, network in [
+        ({"/a": 1}, {}),
+        ({}, {"https://example.test": 1}),
+    ]:
+        try:
+            DeterministicHost(files=files, network=network)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("expected ValueError")
+
+
 def test_deterministic_host_json_fixture_validation():
     host = DeterministicHost.from_json_object(
         {
