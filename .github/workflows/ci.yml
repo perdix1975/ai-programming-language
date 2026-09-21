@@ -50,27 +50,9 @@ jobs:
           output="$(apl run examples/arrays.apl)"
           test "$output" = $'23\n[return i64] 23'
           output="$(apl run examples/records.apl)"
-          test "$output" = 
-      - name: Run trap example
-        run: |
-          set +e
-          output="$(apl run examples/trap.apl)"
-          status=$?
-          set -e
-          test "$status" -eq 2
-          test "$output" = 'APL error: [app.demo] main[0]: demonstration trap'
-37\n[return i64] 37'
+          test "$output" = $'37\n[return i64] 37'
           output="$(apl run examples/effects.apl --allow console.write)"
-          test "$output" = 
-      - name: Run trap example
-        run: |
-          set +e
-          output="$(apl run examples/trap.apl)"
-          status=$?
-          set -e
-          test "$status" -eq 2
-          test "$output" = 'APL error: [app.demo] main[0]: demonstration trap'
-hello from APL\n[return i64] 42'
+          test "$output" = $'hello from APL\n[return i64] 42'
       - name: Run trap example
         run: |
           set +e
