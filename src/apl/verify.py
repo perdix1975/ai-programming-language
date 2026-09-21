@@ -392,6 +392,7 @@ def _verify_call(
     function_name: str,
     signatures: dict[str, Signature],
     call_graph: dict[str, set[str]],
+    effects_used: set[str],
     where: str,
 ) -> None:
     target = ins.get("function")
@@ -410,6 +411,7 @@ def _verify_call(
                 f"{where}: call arg {index} expects '{expected_type}', got '{actual}'")
 
     call_graph[function_name].add(target)
+    effects_used.update(sig.effects)
     if sig.returns == "unit":
         _expect("id" not in ins, f"{where}: unit call must not bind an id")
         _expect("type" not in ins or ins.get("type") == "unit",
@@ -426,6 +428,7 @@ def _verify_if(
     version: str,
     signatures: dict[str, Signature],
     call_graph: dict[str, set[str]],
+    effects_used: set[str],
     where: str,
 ) -> None:
     cond = ins.get("cond")
@@ -447,6 +450,7 @@ def _verify_if(
             version=version,
             signatures=signatures,
             call_graph=call_graph,
+            effects_used=effects_used,
             terminator="yield",
             result_type=result_type,
             where_prefix=f"{where}.{label}",
@@ -463,6 +467,7 @@ def _verify_repeat(
     version: str,
     signatures: dict[str, Signature],
     call_graph: dict[str, set[str]],
+    effects_used: set[str],
     where: str,
 ) -> None:
     count = ins.get("count")
@@ -504,6 +509,7 @@ def _verify_repeat(
         version=version,
         signatures=signatures,
         call_graph=call_graph,
+        effects_used=effects_used,
         terminator="yield",
         result_type=result_type,
         where_prefix=f"{where}.body",
