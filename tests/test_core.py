@@ -551,7 +551,7 @@ def test_v004_rejects_array_op():
     try:
         verify_program(p)
     except VerificationError as exc:
-        assert "structured types require APL 0.0.5" in str(exc)
+        assert "array types require APL 0.0.5" in str(exc)
     else:
         raise AssertionError("expected VerificationError")
 
