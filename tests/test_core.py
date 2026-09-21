@@ -926,3 +926,212 @@ def test_v006_rejects_explicit_trap():
         assert "trap requires APL 0.0.7" in str(exc)
     else:
         raise AssertionError("expected VerificationError")
+
+
+
+def effectful_program():
+    return {
+        "apl": "0.0.8",
+        "module": "effects",
+        "capabilities": ["console.write"],
+        "entry": "main",
+        "functions": [
+            {
+                "name": "emit",
+                "params": [{"name": "message", "type": "string"}],
+                "returns": "unit",
+                "effects": ["console.write"],
+                "body": [
+                    {"op": "print", "args": ["message"]},
+                    {"op": "return"},
+                ],
+            },
+            {
+                "name": "main",
+                "params": [],
+                "returns": "i64",
+                "effects": ["console.write"],
+                "body": [
+                    {"op": "const", "id": "message", "type": "string", "value": "hello"},
+                    {"op": "call", "function": "emit", "args": ["message"]},
+                    {"op": "const", "id": "answer", "type": "i64", "value": 42},
+                    {"op": "return", "value": "answer"},
+                ],
+            },
+        ],
+    }
+
+
+def pure_v008_program():
+    return {
+        "apl": "0.0.8",
+        "module": "pure",
+        "capabilities": [],
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "effects": [],
+            "body": [
+                {"op": "const", "id": "answer", "type": "i64", "value": 42},
+                {"op": "return", "value": "answer"},
+            ],
+        }],
+    }
+
+
+def test_v008_pure_program_needs_no_runtime_grants():
+    p = pure_v008_program()
+    verify_program(p)
+    result = run_program(p, output=lambda _: None)
+    assert result.value == 42
+
+
+def test_effectful_program_verifies_with_exact_declarations():
+    verify_program(effectful_program())
+
+
+def test_effectful_program_requires_runtime_capability_grant():
+    p = effectful_program()
+    try:
+        run_program(p, output=lambda _: None)
+    except ExecutionError as exc:
+        assert exc.code == "apl.capability_denied"
+        assert exc.where == "<module>"
+        assert "console.write" in exc.message
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_effectful_program_runs_with_grant():
+    lines = []
+    result = run_program(
+        effectful_program(),
+        output=lines.append,
+        capabilities={"console.write"},
+    )
+    assert lines == ["hello"]
+    assert result.value == 42
+
+
+def test_caller_must_declare_callee_effects():
+    p = effectful_program()
+    p["functions"][1]["effects"] = []
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "declared effects [] do not match inferred effects ['console.write']" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_function_cannot_declare_unused_effect():
+    p = pure_v008_program()
+    p["functions"][0]["effects"] = ["console.write"]
+    p["capabilities"] = ["console.write"]
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "declared effects ['console.write'] do not match inferred effects []" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_module_capabilities_must_exactly_match_function_effect_union():
+    p = effectful_program()
+    p["capabilities"] = []
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "capabilities must exactly match the union" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_capability_list_rejects_duplicates():
+    p = effectful_program()
+    p["capabilities"] = ["console.write", "console.write"]
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "sorted lexicographically with no duplicates" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_unknown_effect_is_rejected():
+    p = pure_v008_program()
+    p["functions"][0]["effects"] = ["network.telepathy"]
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "unsupported effect 'network.telepathy'" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_v008_requires_capabilities_and_function_effects_fields():
+    p = pure_v008_program()
+    del p["capabilities"]
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "capabilities must be a list" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+    p = pure_v008_program()
+    del p["functions"][0]["effects"]
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "main: effects must be a list" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_effect_in_unselected_if_branch_is_still_declared_statically():
+    p = {
+        "apl": "0.0.8",
+        "module": "branch_effect",
+        "capabilities": ["console.write"],
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "effects": ["console.write"],
+            "body": [
+                {"op": "const", "id": "cond", "type": "bool", "value": False},
+                {"op": "const", "id": "a", "type": "i64", "value": 1},
+                {"op": "const", "id": "b", "type": "i64", "value": 2},
+                {
+                    "op": "if",
+                    "id": "result",
+                    "type": "i64",
+                    "cond": "cond",
+                    "then": [
+                        {"op": "print", "args": ["a"]},
+                        {"op": "yield", "value": "a"},
+                    ],
+                    "else": [
+                        {"op": "yield", "value": "b"},
+                    ],
+                },
+                {"op": "return", "value": "result"},
+            ],
+        }],
+    }
+    verify_program(p)
+    lines = []
+    result = run_program(p, output=lines.append, capabilities={"console.write"})
+    assert result.value == 2
+    assert lines == []
+
+
+def test_legacy_print_does_not_require_new_capability_grants():
+    p = sample_program("0.0.1")
+    p["functions"][0]["body"].insert(3, {"op": "print", "args": ["c"]})
+    result = run_program(p, output=lambda _: None)
+    assert result.value == 42
