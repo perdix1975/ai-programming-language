@@ -40,6 +40,10 @@ The initial corpus covers:
 - record version gating;
 - reserved trap-code namespaces;
 - instructions after abrupt terminators;
-- unknown structured type descriptors.
+- unknown structured type descriptors;
+- missing Draft 0.0.8 capability/effect declarations;
+- effect inference/declaration mismatches;
+- module capability-union mismatches;
+- unknown and duplicate effect declarations.
 
 The corpus should grow whenever a verifier bug, ambiguity, or new language rule is introduced.
