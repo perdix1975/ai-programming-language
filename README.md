@@ -2,25 +2,31 @@
 
 APL is an experimental programming language and execution architecture designed **AI-first, semantics-first, and verification-first**.
 
-The core idea is simple: the normative program should not be optimized for human typing. It should be an explicit typed semantic representation that AI systems can generate, verify, transform, optimize, explain, and compile.
+The normative program is not optimized for human typing. It is an explicit typed semantic representation that AI systems can generate, verify, transform, optimize, explain, and compile.
 
-> Status: **pre-alpha / Draft 0.0.1**
+> Status: **pre-alpha / Draft 0.0.2**
 
 ## What exists now
 
-The first executable seed includes:
+The executable reference core includes:
 
 - versioned JSON semantic IR;
 - SSA-style value identities;
 - types: `i64`, `bool`, `string`, `unit`;
-- operations: `const`, `add`, `sub`, `mul`, `eq`, `print`, `return`;
+- arithmetic and equality;
+- explicit `print` effect;
+- typed function calls with forward references;
+- structured value-producing `if` regions using `yield`;
+- static rejection of direct and mutual recursion in Draft 0.0.2;
 - strict verifier;
 - deterministic canonical encoding and SHA-256 identity;
 - reference interpreter;
 - CLI;
-- conformance tests and CI.
+- conformance tests and CI on Python 3.11 and 3.13.
 
-The Python implementation is a bootstrap reference implementation. It is not intended to be the final high-performance runtime.
+APL 0.0.1 programs remain supported. New `call` and `if` operations require 0.0.2.
+
+The Python implementation is a bootstrap reference implementation, not the planned high-performance runtime.
 
 ## Try it
 
@@ -30,42 +36,19 @@ Requires Python 3.11+.
 python -m pip install -e .
 apl verify examples/hello.apl
 apl run examples/hello.apl
-apl canonicalize examples/hello.apl
-apl hash examples/hello.apl
+
+apl verify examples/functions_if.apl
+apl run examples/functions_if.apl
+
+apl canonicalize examples/functions_if.apl
+apl hash examples/functions_if.apl
 ```
 
-Expected execution:
+## Why the IR looks like this
 
-```text
-42
-[return i64] 42
-```
+APL starts from semantic structure rather than conventional source syntax. For example, a conditional is a typed region with explicit branch-local instructions and a `yield` value. That makes data dependencies and result types machine-verifiable before execution.
 
-## First APL program
-
-```json
-{
-  "apl": "0.0.1",
-  "module": "hello",
-  "entry": "main",
-  "functions": [
-    {
-      "name": "main",
-      "params": [],
-      "returns": "i64",
-      "body": [
-        {"op": "const", "id": "a", "type": "i64", "value": 40},
-        {"op": "const", "id": "b", "type": "i64", "value": 2},
-        {"op": "add", "id": "answer", "type": "i64", "args": ["a", "b"]},
-        {"op": "print", "args": ["answer"]},
-        {"op": "return", "value": "answer"}
-      ]
-    }
-  ]
-}
-```
-
-This representation is deliberately more machine-oriented than a conventional source language. Human-friendly projections can be added later without becoming the semantic foundation.
+Human-friendly surface syntax can be added later, but it will lower into the same semantic IR rather than define a second meaning for the program.
 
 ## Design documents
 
@@ -91,7 +74,7 @@ APL semantic IR
     +--> optimizer --> WASM/native/accelerator backend
 ```
 
-Future milestones add control flow, function calls, collections, explicit effects/capabilities, contracts, richer types, compilation, declarative solving, machine-generated primitives, and learned optimization.
+The next work expands the real programming core with bounded iteration, defined division/comparison semantics, arrays/records, and an explicit trap model before moving into capabilities, contracts, compilation, and AI-native learned primitives.
 
 ## License
 
