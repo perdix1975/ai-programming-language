@@ -1,0 +1,23 @@
+{
+  "apl":"0.0.2",
+  "module":"call_type_mismatch",
+  "entry":"main",
+  "functions":[
+    {
+      "name":"accept_bool",
+      "params":[{"name":"flag","type":"bool"}],
+      "returns":"bool",
+      "body":[{"op":"return","value":"flag"}]
+    },
+    {
+      "name":"main",
+      "params":[],
+      "returns":"bool",
+      "body":[
+        {"op":"const","id":"n","type":"i64","value":1},
+        {"op":"call","id":"result","type":"bool","function":"accept_bool","args":["n"]},
+        {"op":"return","value":"result"}
+      ]
+    }
+  ]
+}
