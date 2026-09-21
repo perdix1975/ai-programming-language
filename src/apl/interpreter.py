@@ -8,6 +8,17 @@ from .verify import verify_program
 
 
 @dataclass(frozen=True)
+class RecordValue:
+    fields: tuple[tuple[str, Any], ...]
+
+    def get(self, name: str) -> Any:
+        for field_name, value in self.fields:
+            if field_name == name:
+                return value
+        raise KeyError(name)
+
+
+@dataclass(frozen=True)
 class ExecutionResult:
     value: Any
     type: Any
@@ -85,7 +96,7 @@ def _execute_sequence(
     function_name: str,
     output: Callable[[str], None],
     terminator: str,
-    result_type: str,
+    result_type: Any,
     where_prefix: str,
 ) -> ExecutionResult:
     for index, ins in enumerate(instructions):
@@ -140,6 +151,18 @@ def _execute_sequence(
             array_name = ins["args"][0]
             env[ins["id"]] = len(env[array_name])
             types[ins["id"]] = "i64"
+        elif op == "record":
+            env[ins["id"]] = RecordValue(
+                tuple(
+                    (field_name, env[source])
+                    for field_name, source in sorted(ins["fields"].items())
+                )
+            )
+            types[ins["id"]] = ins["type"]
+        elif op == "record.get":
+            record_value = env[ins["record"]]
+            env[ins["id"]] = record_value.get(ins["field"])
+            types[ins["id"]] = types[ins["record"]]["record"][ins["field"]]
         elif op == "print":
             output(_render(env[ins["args"][0]]))
         elif op == "call":
