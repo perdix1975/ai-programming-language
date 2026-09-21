@@ -214,3 +214,81 @@ def test_canonical_encoding_and_hash_are_stable():
     b = canonical_text(dict(reversed(list(p.items()))))
     assert a == b
     assert semantic_hash(p) == semantic_hash(dict(reversed(list(p.items()))))
+
+
+def binary_program(op, a, b, result_type="i64"):
+    return {
+        "apl": "0.0.3",
+        "module": "binary",
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": result_type,
+            "body": [
+                {"op": "const", "id": "a", "type": "i64", "value": a},
+                {"op": "const", "id": "b", "type": "i64", "value": b},
+                {"op": op, "id": "r", "type": result_type, "args": ["a", "b"]},
+                {"op": "return", "value": "r"},
+            ],
+        }],
+    }
+
+
+def test_division_truncates_toward_zero():
+    assert run_program(binary_program("div", -7, 3), output=lambda _: None).value == -2
+    assert run_program(binary_program("div", 7, -3), output=lambda _: None).value == -2
+    assert run_program(binary_program("div", -7, -3), output=lambda _: None).value == 2
+
+
+def test_remainder_matches_truncating_division():
+    assert run_program(binary_program("rem", -7, 3), output=lambda _: None).value == -1
+    assert run_program(binary_program("rem", 7, -3), output=lambda _: None).value == 1
+    assert run_program(binary_program("rem", -7, -3), output=lambda _: None).value == -1
+
+
+def test_division_by_zero_is_defined_trap():
+    try:
+        run_program(binary_program("div", 1, 0), output=lambda _: None)
+    except ExecutionError as exc:
+        assert "division by zero" in str(exc)
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_division_min_by_minus_one_overflows():
+    try:
+        run_program(binary_program("div", -(2**63), -1), output=lambda _: None)
+    except ExecutionError as exc:
+        assert "overflow" in str(exc)
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_remainder_min_by_minus_one_is_zero():
+    assert run_program(binary_program("rem", -(2**63), -1), output=lambda _: None).value == 0
+
+
+def test_ordered_i64_comparisons():
+    cases = [
+        ("lt", 2, 3, True),
+        ("le", 3, 3, True),
+        ("gt", 4, 3, True),
+        ("ge", 3, 3, True),
+        ("lt", 4, 3, False),
+    ]
+    for op, a, b, expected in cases:
+        result = run_program(binary_program(op, a, b, "bool"), output=lambda _: None)
+        assert result.value is expected
+        assert result.type == "bool"
+
+
+def test_v002_rejects_v003_ops():
+    p = binary_program("div", 6, 3)
+    p["apl"] = "0.0.2"
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "requires APL 0.0.3" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")

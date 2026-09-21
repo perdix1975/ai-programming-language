@@ -19,6 +19,24 @@ def _i64(value: int, where: str) -> int:
     return value
 
 
+def _trunc_div(a: int, b: int, where: str) -> int:
+    if b == 0:
+        raise ExecutionError(f"{where}: division by zero")
+    if a == -(2**63) and b == -1:
+        raise ExecutionError(f"{where}: signed i64 overflow")
+    q = abs(a) // abs(b)
+    return -q if (a < 0) != (b < 0) else q
+
+
+def _trunc_rem(a: int, b: int, where: str) -> int:
+    if b == 0:
+        raise ExecutionError(f"{where}: division by zero")
+    if a == -(2**63) and b == -1:
+        return 0
+    q = _trunc_div(a, b, where)
+    return a - q * b
+
+
 def run_program(
     program: dict[str, Any],
     *,
@@ -88,6 +106,19 @@ def _execute_sequence(
             raw = a + b if op == "add" else a - b if op == "sub" else a * b
             env[ins["id"]] = _i64(raw, where)
             types[ins["id"]] = "i64"
+        elif op in {"div", "rem"}:
+            a, b = (env[x] for x in ins["args"])
+            env[ins["id"]] = _trunc_div(a, b, where) if op == "div" else _trunc_rem(a, b, where)
+            types[ins["id"]] = "i64"
+        elif op in {"lt", "le", "gt", "ge"}:
+            a, b = (env[x] for x in ins["args"])
+            env[ins["id"]] = (
+                a < b if op == "lt" else
+                a <= b if op == "le" else
+                a > b if op == "gt" else
+                a >= b
+            )
+            types[ins["id"]] = "bool"
         elif op == "eq":
             a, b = (env[x] for x in ins["args"])
             env[ins["id"]] = a == b

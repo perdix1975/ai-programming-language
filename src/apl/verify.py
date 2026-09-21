@@ -7,6 +7,7 @@ from . import SUPPORTED_LANGUAGE_VERSIONS
 from .errors import VerificationError
 
 SUPPORTED_TYPES = {"i64", "bool", "string", "unit"}
+VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3}
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,10 @@ def _expect(condition: bool, message: str) -> None:
 def _value_type(name: str, env: dict[str, str], where: str) -> str:
     _expect(name in env, f"{where}: reference '{name}' is not defined before use")
     return env[name]
+
+
+def _supports(version: str, level: int) -> bool:
+    return VERSION_LEVELS[version] >= level
 
 
 def verify_program(program: Any) -> None:
@@ -155,15 +160,21 @@ def _verify_sequence(
             _verify_const(ins, env, where)
         elif op in {"add", "sub", "mul"}:
             _verify_binary_i64(ins, env, where)
+        elif op in {"div", "rem"}:
+            _expect(_supports(version, 3), f"{where}: {op} requires APL 0.0.3")
+            _verify_binary_i64(ins, env, where)
+        elif op in {"lt", "le", "gt", "ge"}:
+            _expect(_supports(version, 3), f"{where}: {op} requires APL 0.0.3")
+            _verify_ordered_i64(ins, env, where)
         elif op == "eq":
             _verify_eq(ins, env, where)
         elif op == "print":
             _verify_print(ins, env, where)
         elif op == "call":
-            _expect(version == "0.0.2", f"{where}: call requires APL 0.0.2")
+            _expect(_supports(version, 2), f"{where}: call requires APL 0.0.2+")
             _verify_call(ins, env, function_name, signatures, call_graph, where)
         elif op == "if":
-            _expect(version == "0.0.2", f"{where}: if requires APL 0.0.2")
+            _expect(_supports(version, 2), f"{where}: if requires APL 0.0.2+")
             _verify_if(
                 ins=ins,
                 env=env,
@@ -216,6 +227,12 @@ def _verify_binary_i64(ins: dict[str, Any], env: dict[str, str], where: str) -> 
     left, right = _binary_args(ins, env, where)
     _expect(left == right == "i64", f"{where}: arithmetic requires i64 operands")
     _bind_result(ins, env, "i64", where)
+
+
+def _verify_ordered_i64(ins: dict[str, Any], env: dict[str, str], where: str) -> None:
+    left, right = _binary_args(ins, env, where)
+    _expect(left == right == "i64", f"{where}: ordered comparison requires i64 operands")
+    _bind_result(ins, env, "bool", where)
 
 
 def _verify_eq(ins: dict[str, Any], env: dict[str, str], where: str) -> None:
@@ -281,7 +298,7 @@ def _verify_if(
 
     result_type = ins.get("type")
     _expect(result_type in SUPPORTED_TYPES - {"unit"},
-            f"{where}: v0.0.2 if must produce a non-unit value")
+            f"{where}: if must produce a non-unit value")
 
     for label in ("then", "else"):
         branch_env = dict(env)
