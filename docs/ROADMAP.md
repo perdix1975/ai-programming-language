@@ -28,8 +28,8 @@
 
 - [x] formal exact function effect annotations
 - [x] exact module capability declarations plus explicit runtime grants
-- [ ] filesystem/network capability prototypes
-- [ ] deterministic host interface
+- [x] deterministic fixture-backed filesystem/network capability prototypes
+- [x] deterministic fixture-backed host interface
 - [ ] resource limits
 
 ## M3 — Contracts and richer types
