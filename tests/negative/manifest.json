@@ -166,5 +166,11 @@
     "contains": [
       "contract ids must be unique across requires/ensures"
     ]
+  },
+  {
+    "file": "v010_contract_gate.apl",
+    "contains": [
+      "function contracts require APL 0.0.11"
+    ]
   }
 ]
