@@ -1,0 +1,17 @@
+{
+  "apl":"0.0.1",
+  "module":"use_before_definition",
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"i64",
+      "body":[
+        {"op":"const","id":"one","type":"i64","value":1},
+        {"op":"add","id":"sum","type":"i64","args":["one","missing"]},
+        {"op":"return","value":"sum"}
+      ]
+    }
+  ]
+}
