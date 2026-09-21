@@ -26,11 +26,11 @@
 
 ## M2 — Effects and safety
 
-- formal effect annotations
-- capability declarations
-- filesystem/network capability prototypes
-- deterministic host interface
-- resource limits
+- [x] formal exact function effect annotations
+- [x] exact module capability declarations plus explicit runtime grants
+- [ ] filesystem/network capability prototypes
+- [ ] deterministic host interface
+- [ ] resource limits
 
 ## M3 — Contracts and richer types
 
