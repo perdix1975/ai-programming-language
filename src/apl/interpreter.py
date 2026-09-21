@@ -26,13 +26,13 @@ class ExecutionResult:
 
 def _i64(value: int, where: str) -> int:
     if value < -(2**63) or value > 2**63 - 1:
-        raise ExecutionError(f"{where}: signed i64 overflow")
+        raise ExecutionError("apl.i64_overflow", "signed i64 overflow", where=where)
     return value
 
 
 def _trunc_div(a: int, b: int, where: str) -> int:
     if b == 0:
-        raise ExecutionError(f"{where}: division by zero")
+        raise ExecutionError("apl.division_by_zero", "division by zero", where=where)
     if a == -(2**63) and b == -1:
         raise ExecutionError(f"{where}: signed i64 overflow")
     q = abs(a) // abs(b)
@@ -109,6 +109,9 @@ def _execute_sequence(
             name = ins["value"]
             return ExecutionResult(env[name], types[name])
 
+        if op == "trap":
+            raise ExecutionError(ins["code"], ins["message"], where=where)
+
         if op == "const":
             env[ins["id"]] = ins["value"]
             types[ins["id"]] = ins["type"]
@@ -143,7 +146,9 @@ def _execute_sequence(
             item_index = env[index_name]
             if item_index < 0 or item_index >= len(values):
                 raise ExecutionError(
-                    f"{where}: array index {item_index} out of bounds for length {len(values)}"
+                    "apl.array_index_oob",
+                    f"array index {item_index} out of bounds for length {len(values)}",
+                    where=where,
                 )
             env[ins["id"]] = values[item_index]
             types[ins["id"]] = types[array_name]["array"]
@@ -195,10 +200,16 @@ def _execute_sequence(
             count = env[ins["count"]]
             bound = ins["max"]
             if count < 0:
-                raise ExecutionError(f"{where}: repeat count must be non-negative")
+                raise ExecutionError(
+                    "apl.repeat_negative_count",
+                    "repeat count must be non-negative",
+                    where=where,
+                )
             if count > bound:
                 raise ExecutionError(
-                    f"{where}: repeat count {count} exceeds declared max {bound}"
+                    "apl.repeat_count_exceeds_max",
+                    f"repeat count {count} exceeds declared max {bound}",
+                    where=where,
                 )
 
             carry_value = env[ins["init"]]
@@ -227,9 +238,17 @@ def _execute_sequence(
             env[ins["id"]] = carry_value
             types[ins["id"]] = carry_type
         else:
-            raise ExecutionError(f"{where}: unsupported op '{op}'")
+            raise ExecutionError(
+                "apl.internal_invalid_execution",
+                f"unsupported verified op '{op}'",
+                where=where,
+            )
 
-    raise ExecutionError(f"{where_prefix}: verified block terminated without {terminator}")
+    raise ExecutionError(
+        "apl.internal_invalid_execution",
+        f"verified block terminated without {terminator}",
+        where=where_prefix,
+    )
 
 
 def _render(value: Any) -> str:
