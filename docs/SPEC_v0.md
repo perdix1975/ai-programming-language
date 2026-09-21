@@ -13,7 +13,8 @@ The current reference implementation supports:
 - `0.0.1`: the original scalar/SSA semantic seed;
 - `0.0.2`: a strict extension adding typed function calls and structured `if` regions;
 - `0.0.3`: a strict extension adding defined integer division/remainder and ordered `i64` comparisons;
-- `0.0.4`: a strict extension adding bounded structured `repeat` regions;\n- `0.0.5`: a strict extension adding structured fixed-length array types and immutable array operations.
+- `0.0.4`: a strict extension adding bounded structured `repeat` regions;
+- `0.0.5`: a strict extension adding structured fixed-length array types and immutable array operations.
 
 Older programs retain their declared-version meaning. An operation is valid only when introduced by that program's declared version or an earlier one.
 
