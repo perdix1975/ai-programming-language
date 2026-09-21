@@ -21,7 +21,7 @@
 - [x] division/remainder and ordered comparisons with defined edge semantics
 - [x] immutable fixed-length arrays with structured type descriptors
 - [x] immutable structural records with named fields
-- [ ] explicit error/trap model
+- [x] explicit deterministic trap model with stable machine-readable codes
 - [ ] broader conformance suite and negative corpus
 
 ## M2 — Effects and safety
