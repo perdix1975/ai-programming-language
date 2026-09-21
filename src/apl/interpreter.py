@@ -151,6 +151,41 @@ def _execute_sequence(
             )
             env[ins["id"]] = branch_result.value
             types[ins["id"]] = branch_result.type
+        elif op == "repeat":
+            count = env[ins["count"]]
+            bound = ins["max"]
+            if count < 0:
+                raise ExecutionError(f"{where}: repeat count must be non-negative")
+            if count > bound:
+                raise ExecutionError(
+                    f"{where}: repeat count {count} exceeds declared max {bound}"
+                )
+
+            carry_value = env[ins["init"]]
+            carry_type = types[ins["init"]]
+            for iteration in range(count):
+                region_env = dict(env)
+                region_types = dict(types)
+                region_env[ins["index"]] = iteration
+                region_types[ins["index"]] = "i64"
+                region_env[ins["carry"]] = carry_value
+                region_types[ins["carry"]] = carry_type
+
+                yielded = _execute_sequence(
+                    instructions=ins["body"],
+                    env=region_env,
+                    types=region_types,
+                    functions=functions,
+                    function_name=function_name,
+                    output=output,
+                    terminator="yield",
+                    result_type=carry_type,
+                    where_prefix=f"{where}.body",
+                )
+                carry_value = yielded.value
+
+            env[ins["id"]] = carry_value
+            types[ins["id"]] = carry_type
         else:
             raise ExecutionError(f"{where}: unsupported op '{op}'")
 
