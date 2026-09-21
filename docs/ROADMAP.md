@@ -10,17 +10,18 @@
 - [x] reference interpreter
 - [x] CLI: verify/run/canonicalize/hash
 - [x] initial conformance tests
-- [ ] CI green on supported Python versions
+- [x] CI green on supported Python versions
 
 ## M1 — Real programming core
 
-- function calls
-- structured `if`
-- bounded/structured loops
-- division and ordered comparisons with defined edge semantics
-- arrays/records
-- explicit error/trap model
-- more comprehensive conformance suite
+- [x] typed function calls and forward references
+- [x] structured value-producing `if`
+- [x] acyclic call-graph verification
+- [ ] bounded/structured loops
+- [ ] division and ordered comparisons with defined edge semantics
+- [ ] arrays/records
+- [ ] explicit error/trap model
+- [ ] broader conformance suite and negative corpus
 
 ## M2 — Effects and safety
 
