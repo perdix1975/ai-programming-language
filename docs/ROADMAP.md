@@ -30,7 +30,7 @@
 - [x] exact module capability declarations plus explicit runtime grants
 - [x] deterministic fixture-backed filesystem/network capability prototypes
 - [x] deterministic fixture-backed host interface
-- [ ] resource limits
+- [x] deterministic steps/output/host-read resource limits with host tightening
 
 ## M3 — Contracts and richer types
 
