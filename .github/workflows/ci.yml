@@ -37,8 +37,6 @@ jobs:
           output="$(apl run examples/hello.apl)"
           test "$output" = $'42\n[return i64] 42'
           output="$(apl run examples/functions_if.apl)"
-          test "$output" = 
-42\n[return i64] 42'
+          test "$output" = $'42\n[return i64] 42'
           output="$(apl run examples/arithmetic.apl)"
-          test "$output" = 
--2\n-1\ntrue\n[return i64] -2'
+          test "$output" = $'-2\n-1\ntrue\n[return i64] -2'
