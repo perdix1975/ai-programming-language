@@ -1,6 +1,6 @@
 # APL Specification v0
 
-Status: **Draft 0.0.4**
+Status: **Draft 0.0.5**
 
 This document defines the executable v0 subset of APL. The purpose of v0 is to establish stable semantic machinery before adding richer effects, contracts, capabilities, concurrency, or native compilation.
 
@@ -13,7 +13,7 @@ The current reference implementation supports:
 - `0.0.1`: the original scalar/SSA semantic seed;
 - `0.0.2`: a strict extension adding typed function calls and structured `if` regions;
 - `0.0.3`: a strict extension adding defined integer division/remainder and ordered `i64` comparisons;
-- `0.0.4`: a strict extension adding bounded structured `repeat` regions.
+- `0.0.4`: a strict extension adding bounded structured `repeat` regions;\n- `0.0.5`: a strict extension adding structured fixed-length array types and immutable array operations.
 
 Older programs retain their declared-version meaning. An operation is valid only when introduced by that program's declared version or an earlier one.
 
@@ -53,8 +53,11 @@ v0 defines:
 | `bool` | Boolean |
 | `string` | Unicode string |
 | `unit` | no value |
+| `{"array": T, "len": N}` | immutable fixed-length array of `N` values of type `T` (0.0.5+) |
 
 Integer constants are restricted to `[-2^63, 2^63-1]`.
+
+Structured array types are represented directly as JSON objects, not encoded inside strings. Array lengths are integer literals in `[0, 65_536]`. Array element types may themselves be valid non-`unit` types, enabling nested fixed arrays.
 
 ## 5. SSA identity and regions
 
@@ -216,7 +219,64 @@ Execution first validates the runtime count. A negative count, or a count greate
 
 Because every verified `repeat` contains a statically capped `max`, it cannot execute an unbounded number of iterations.
 
-## 10. Verification
+## 10. Draft 0.0.5 instructions
+
+### 10.1 structured fixed-array type
+
+A fixed-array type is represented as:
+
+```json
+{"array":"i64","len":3}
+```
+
+The descriptor contains exactly two keys: `array` for the element type and `len` for the exact length. Length is part of the type, so arrays of lengths 3 and 4 are distinct types.
+
+Array values are immutable. Mutation is not part of Draft 0.0.5.
+
+### 10.2 `array`
+
+Constructs an immutable fixed-length array from existing SSA values.
+
+```json
+{
+  "op":"array",
+  "id":"items",
+  "type":{"array":"i64","len":3},
+  "args":["a","b","c"]
+}
+```
+
+Verification requires the number of arguments to exactly match the type length and every argument type to exactly match the element type.
+
+### 10.3 `array.get`
+
+Reads one element by runtime `i64` index.
+
+```json
+{"op":"array.get","id":"x","type":"i64","args":["items","index"]}
+```
+
+The index is zero-based. If the index is negative or greater than or equal to the fixed length, execution traps with an APL execution error. Negative indices never wrap from the end.
+
+### 10.4 `array.len`
+
+Returns the exact fixed length as an `i64`.
+
+```json
+{"op":"array.len","id":"n","type":"i64","args":["items"]}
+```
+
+### 10.5 equality
+
+Two arrays may be compared with `eq` when their complete types are identical. Equality is structural and element-wise. Nested fixed arrays therefore compare recursively.
+
+### 10.6 function and region typing
+
+Structured array types may be used in function parameters, function return types, `if` results, and `repeat` carried values. Exact structural type equality is required; there are no implicit array conversions.
+
+`print` remains scalar-only in Draft 0.0.5.
+
+## 11. Verification
 
 A conforming verifier rejects at least:
 
@@ -237,7 +297,7 @@ A conforming verifier rejects at least:
 
 Execution is defined only for verified programs.
 
-## 11. Canonical textual representation
+## 12. Canonical textual representation
 
 The v0 canonical encoding is JSON with:
 
@@ -251,17 +311,17 @@ Canonical identity is SHA-256 over the UTF-8 bytes of that encoding.
 
 This is an encoding identity, not yet a proof of semantic equivalence between differently structured programs.
 
-## 12. Reference implementation
+## 13. Reference implementation
 
 The Python implementation under `src/apl` is the executable reference for the current draft. Tests under `tests/` form a growing conformance suite.
 
-## 13. Deliberately absent
+## 14. Deliberately absent
 
 Not yet defined:
 
 - general recursion;
 - loops/iteration;
-- arrays, records, algebraic data types;
+- records and algebraic data types;
 - explicit trap values/handlers;
 - contracts and refinement types;
 - formal effect/capability declarations;
