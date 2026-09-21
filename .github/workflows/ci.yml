@@ -38,6 +38,7 @@ jobs:
           apl verify examples/trap.apl
           apl verify examples/effects.apl
           apl verify examples/host_io.apl
+          apl verify examples/limits.apl
       - name: Run successful examples
         run: |
           output="$(apl run examples/hello.apl)"
@@ -56,6 +57,8 @@ jobs:
           test "$output" = $'hello from APL\n[return i64] 42'
           output="$(apl run examples/host_io.apl --allow console.write --allow fs.read_text --allow net.get_text --host-fixture examples/host_fixture.json)"
           test "$output" = $'local fixture\nnetwork fixture\n[return string] local fixture'
+          output="$(apl run examples/limits.apl)"
+          test "$output" = '[return i64] 42'
       - name: Run explicit trap example
         run: |
           set +e
@@ -80,3 +83,11 @@ jobs:
           set -e
           test "$status" -eq 2
           test "$output" = "APL error: [apl.host_unavailable] main[2]: host interface is required for 'fs.read_text'"
+      - name: Enforce host-tightened step budget
+        run: |
+          set +e
+          output="$(apl run examples/limits.apl --max-steps 1)"
+          status=$?
+          set -e
+          test "$status" -eq 2
+          test "$output" = 'APL error: [apl.resource_limit] main[1]: steps resource limit exhausted'
