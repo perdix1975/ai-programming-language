@@ -216,6 +216,11 @@ def _read_signature(fn: Any, version: str) -> tuple[str, Signature]:
             result_type=returns,
             function_name=name,
         )
+    else:
+        _expect(
+            "requires" not in fn and "ensures" not in fn,
+            f"{name}: function contracts require APL 0.0.11",
+        )
 
     body = fn.get("body")
     _expect(isinstance(body, list) and body, f"{name}: body must be non-empty")
