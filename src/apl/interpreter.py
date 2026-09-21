@@ -48,18 +48,38 @@ def _trunc_rem(a: int, b: int, where: str) -> int:
     return a - q * b
 
 
+def _version_at_least(version: str, target: tuple[int, int, int]) -> bool:
+    return tuple(int(part) for part in version.split(".")) >= target
+
+
 def run_program(
     program: dict[str, Any],
     *,
     output: Callable[[str], None] = print,
+    capabilities: set[str] | frozenset[str] | None = None,
 ) -> ExecutionResult:
     verify_program(program)
     functions = {fn["name"]: fn for fn in program["functions"]}
+
+    enforce_capabilities = _version_at_least(program["apl"], (0, 0, 8))
+    granted = frozenset(capabilities or ())
+    if enforce_capabilities:
+        required = frozenset(program["capabilities"])
+        missing = sorted(required - granted)
+        if missing:
+            raise ExecutionError(
+                "apl.capability_denied",
+                f"missing capability grants: {missing}",
+                where="<module>",
+            )
+
     return _execute_function(
         functions=functions,
         function_name=program["entry"],
         arguments=[],
         output=output,
+        capabilities=granted,
+        enforce_capabilities=enforce_capabilities,
     )
 
 
@@ -69,6 +89,8 @@ def _execute_function(
     function_name: str,
     arguments: list[Any],
     output: Callable[[str], None],
+    capabilities: frozenset[str],
+    enforce_capabilities: bool,
 ) -> ExecutionResult:
     fn = functions[function_name]
     env = {param["name"]: value for param, value in zip(fn["params"], arguments)}
@@ -81,6 +103,8 @@ def _execute_function(
         functions=functions,
         function_name=function_name,
         output=output,
+        capabilities=capabilities,
+        enforce_capabilities=enforce_capabilities,
         terminator="return",
         result_type=fn["returns"],
         where_prefix=function_name,
@@ -95,6 +119,8 @@ def _execute_sequence(
     functions: dict[str, dict[str, Any]],
     function_name: str,
     output: Callable[[str], None],
+    capabilities: frozenset[str],
+    enforce_capabilities: bool,
     terminator: str,
     result_type: Any,
     where_prefix: str,
@@ -169,6 +195,12 @@ def _execute_sequence(
             env[ins["id"]] = record_value.get(ins["field"])
             types[ins["id"]] = types[ins["record"]]["record"][ins["field"]]
         elif op == "print":
+            if enforce_capabilities and "console.write" not in capabilities:
+                raise ExecutionError(
+                    "apl.capability_denied",
+                    "capability 'console.write' is not granted",
+                    where=where,
+                )
             output(_render(env[ins["args"][0]]))
         elif op == "call":
             target = ins["function"]
@@ -177,6 +209,8 @@ def _execute_sequence(
                 function_name=target,
                 arguments=[env[name] for name in ins["args"]],
                 output=output,
+                capabilities=capabilities,
+                enforce_capabilities=enforce_capabilities,
             )
             if result.type != "unit":
                 env[ins["id"]] = result.value
@@ -190,6 +224,8 @@ def _execute_sequence(
                 functions=functions,
                 function_name=function_name,
                 output=output,
+                capabilities=capabilities,
+                enforce_capabilities=enforce_capabilities,
                 terminator="yield",
                 result_type=ins["type"],
                 where_prefix=f"{where}.{label}",
@@ -229,6 +265,8 @@ def _execute_sequence(
                     functions=functions,
                     function_name=function_name,
                     output=output,
+                    capabilities=capabilities,
+                    enforce_capabilities=enforce_capabilities,
                     terminator="yield",
                     result_type=carry_type,
                     where_prefix=f"{where}.body",
