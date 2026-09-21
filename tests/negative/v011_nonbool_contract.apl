@@ -1,0 +1,27 @@
+{
+  "apl":"0.0.11",
+  "module":"v011_nonbool_contract",
+  "capabilities":[],
+  "limits":{"steps":20,"output_lines":0,"host_reads":0},
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"i64",
+      "effects":[],
+      "requires":[
+        {
+          "id":"not_bool",
+          "message":"predicate must be bool",
+          "predicate":{"const":{"type":"i64","value":1}}
+        }
+      ],
+      "ensures":[],
+      "body":[
+        {"op":"const","id":"answer","type":"i64","value":42},
+        {"op":"return","value":"answer"}
+      ]
+    }
+  ]
+}
