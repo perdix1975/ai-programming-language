@@ -2,6 +2,7 @@ from apl.canonical import canonical_text, semantic_hash
 from apl.errors import ExecutionError, VerificationError
 from apl.host import DeterministicHost
 from apl.interpreter import run_program
+from apl.resources import ResourceLimits
 from apl.verify import verify_program
 
 
@@ -1352,3 +1353,256 @@ def test_deterministic_host_json_fixture_validation():
             pass
         else:
             raise AssertionError(f"expected ValueError for {invalid!r}")
+
+
+
+def limited_pure_program(steps=2, output_lines=0, host_reads=0):
+    return {
+        "apl": "0.0.10",
+        "module": "limited_pure",
+        "capabilities": [],
+        "limits": {
+            "steps": steps,
+            "output_lines": output_lines,
+            "host_reads": host_reads,
+        },
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "effects": [],
+            "body": [
+                {"op": "const", "id": "answer", "type": "i64", "value": 42},
+                {"op": "return", "value": "answer"},
+            ],
+        }],
+    }
+
+
+def limited_print_program(output_lines=1):
+    return {
+        "apl": "0.0.10",
+        "module": "limited_print",
+        "capabilities": ["console.write"],
+        "limits": {
+            "steps": 10,
+            "output_lines": output_lines,
+            "host_reads": 0,
+        },
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "effects": ["console.write"],
+            "body": [
+                {"op": "const", "id": "answer", "type": "i64", "value": 42},
+                {"op": "print", "args": ["answer"]},
+                {"op": "return", "value": "answer"},
+            ],
+        }],
+    }
+
+
+def limited_host_read_program(host_reads=1):
+    return {
+        "apl": "0.0.10",
+        "module": "limited_host_read",
+        "capabilities": ["fs.read_text"],
+        "limits": {
+            "steps": 10,
+            "output_lines": 0,
+            "host_reads": host_reads,
+        },
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "string",
+            "effects": ["fs.read_text"],
+            "body": [
+                {"op": "const", "id": "path", "type": "string", "value": "/x"},
+                {
+                    "op": "fs.read_text",
+                    "id": "value",
+                    "type": "string",
+                    "args": ["path"],
+                },
+                {"op": "return", "value": "value"},
+            ],
+        }],
+    }
+
+
+def test_v010_exact_step_budget_succeeds():
+    p = limited_pure_program(steps=2)
+    verify_program(p)
+    assert run_program(p, output=lambda _: None).value == 42
+
+
+def test_v010_step_budget_exhaustion_is_deterministic():
+    p = limited_pure_program(steps=1)
+    try:
+        run_program(p, output=lambda _: None)
+    except ExecutionError as exc:
+        assert exc.code == "apl.resource_limit"
+        assert exc.where == "main[1]"
+        assert "steps resource limit exhausted" in exc.message
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_host_step_limit_can_only_tighten_program_limit():
+    p = limited_pure_program(steps=2)
+    try:
+        run_program(
+            p,
+            output=lambda _: None,
+            limits=ResourceLimits(steps=1),
+        )
+    except ExecutionError as exc:
+        assert exc.code == "apl.resource_limit"
+        assert exc.where == "main[1]"
+    else:
+        raise AssertionError("expected ExecutionError")
+
+    p = limited_pure_program(steps=1)
+    try:
+        run_program(
+            p,
+            output=lambda _: None,
+            limits=ResourceLimits(steps=100),
+        )
+    except ExecutionError as exc:
+        assert exc.code == "apl.resource_limit"
+    else:
+        raise AssertionError("host limit must not loosen program limit")
+
+
+def test_output_line_budget_traps_before_output_effect():
+    p = limited_print_program(output_lines=0)
+    lines = []
+    try:
+        run_program(
+            p,
+            output=lines.append,
+            capabilities={"console.write"},
+        )
+    except ExecutionError as exc:
+        assert exc.code == "apl.resource_limit"
+        assert exc.where == "main[1]"
+        assert "output_lines resource limit exhausted" in exc.message
+        assert lines == []
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_output_line_budget_allows_exact_number_of_lines():
+    p = limited_print_program(output_lines=1)
+    lines = []
+    result = run_program(
+        p,
+        output=lines.append,
+        capabilities={"console.write"},
+    )
+    assert lines == ["42"]
+    assert result.value == 42
+
+
+def test_host_read_budget_traps_before_lookup():
+    p = limited_host_read_program(host_reads=0)
+    host = DeterministicHost(files={"/x": "value"}, network={})
+    try:
+        run_program(
+            p,
+            output=lambda _: None,
+            capabilities={"fs.read_text"},
+            host=host,
+        )
+    except ExecutionError as exc:
+        assert exc.code == "apl.resource_limit"
+        assert exc.where == "main[1]"
+        assert "host_reads resource limit exhausted" in exc.message
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_host_read_budget_allows_exact_number_of_reads():
+    p = limited_host_read_program(host_reads=1)
+    host = DeterministicHost(files={"/x": "value"}, network={})
+    result = run_program(
+        p,
+        output=lambda _: None,
+        capabilities={"fs.read_text"},
+        host=host,
+    )
+    assert result.value == "value"
+
+
+def test_v010_requires_exact_limits_object():
+    p = limited_pure_program()
+    del p["limits"]
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "limits must be an object" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+    p = limited_pure_program()
+    p["limits"]["extra"] = 1
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "limits must contain exactly" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_v010_rejects_invalid_program_limits():
+    for field, value, fragment in [
+        ("steps", -1, "limits.steps must be in [0, 10000000]"),
+        ("steps", 10_000_001, "limits.steps must be in [0, 10000000]"),
+        ("output_lines", -1, "limits.output_lines must be in [0, 1000000]"),
+        ("host_reads", 1_000_001, "limits.host_reads must be in [0, 1000000]"),
+    ]:
+        p = limited_pure_program()
+        p["limits"][field] = value
+        try:
+            verify_program(p)
+        except VerificationError as exc:
+            assert fragment in str(exc)
+        else:
+            raise AssertionError("expected VerificationError")
+
+
+def test_resource_limits_python_api_validation():
+    invalid = [
+        {"steps": -1},
+        {"steps": 10_000_001},
+        {"output_lines": -1},
+        {"host_reads": 1_000_001},
+    ]
+    for kwargs in invalid:
+        try:
+            ResourceLimits(**kwargs)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"expected ValueError for {kwargs}")
+
+
+def test_explicit_host_limits_can_bound_legacy_programs():
+    p = sample_program("0.0.1")
+    try:
+        run_program(
+            p,
+            output=lambda _: None,
+            limits=ResourceLimits(steps=2),
+        )
+    except ExecutionError as exc:
+        assert exc.code == "apl.resource_limit"
+        assert exc.where == "main[2]"
+    else:
+        raise AssertionError("expected ExecutionError")

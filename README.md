@@ -4,7 +4,7 @@ APL is an experimental programming language and execution architecture designed 
 
 The normative program is not optimized for human typing. It is an explicit typed semantic representation that AI systems can generate, verify, transform, optimize, explain, and compile.
 
-> Status: **pre-alpha / Draft 0.0.9**
+> Status: **pre-alpha / Draft 0.0.10**
 
 ## What exists now
 
@@ -24,6 +24,7 @@ The executable reference core includes:
 - exact per-function host-effect annotations and exact module capability declarations;
 - explicit runtime capability grants, with `console.write` as the first protected host effect;
 - deterministic fixture-backed `fs.read_text` and `net.get_text` host operations;
+- deterministic `steps`, `output_lines`, and `host_reads` execution budgets with optional stricter host limits;
 - static rejection of direct and mutual recursion in Draft 0.0.2;
 - strict verifier;
 - deterministic canonical encoding and SHA-256 identity;
@@ -31,7 +32,7 @@ The executable reference core includes:
 - CLI;
 - conformance tests and CI on Python 3.11 and 3.13.
 
-APL 0.0.1–0.0.8 programs remain supported. Draft 0.0.9 adds capability-gated filesystem/network read prototypes through a deterministic host fixture; the reference runtime does not perform direct OS filesystem or HTTP access for these operations.
+APL 0.0.1–0.0.9 programs remain supported. Draft 0.0.10 requires an exact `limits` object in the program IR. Runtime hosts may impose stricter `--max-*` limits, but can never loosen the program-declared budgets.
 
 The Python implementation is a bootstrap reference implementation, not the planned high-performance runtime.
 
@@ -72,8 +73,12 @@ apl run examples/host_io.apl \
   --allow net.get_text \
   --host-fixture examples/host_fixture.json
 
-apl canonicalize examples/host_io.apl
-apl hash examples/host_io.apl
+apl verify examples/limits.apl
+apl run examples/limits.apl
+apl run examples/limits.apl --max-steps 1
+
+apl canonicalize examples/limits.apl
+apl hash examples/limits.apl
 ```
 
 ## Why the IR looks like this
@@ -107,7 +112,7 @@ APL semantic IR
     +--> optimizer --> WASM/native/accelerator backend
 ```
 
-The next M2 work adds explicit resource limits and then hardens the host/capability boundary before contracts, compilation, and AI-native learned primitives.
+M2 is complete. The next work moves into M3 contracts and richer types: preconditions/postconditions, refinement/range types, units/dimensions, and machine-checkable invariants.
 
 ## License
 

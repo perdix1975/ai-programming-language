@@ -6,9 +6,10 @@ from typing import Any
 
 from . import SUPPORTED_LANGUAGE_VERSIONS
 from .errors import VerificationError
+from .resources import RESOURCE_LIMIT_MAXIMA
 
 SUPPORTED_TYPES = {"i64", "bool", "string", "unit"}
-VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4, "0.0.5": 5, "0.0.6": 6, "0.0.7": 7, "0.0.8": 8, "0.0.9": 9}
+VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4, "0.0.5": 5, "0.0.6": 6, "0.0.7": 7, "0.0.8": 8, "0.0.9": 9, "0.0.10": 10}
 MAX_REPEAT_BOUND = 1_000_000
 MAX_ARRAY_LENGTH = 65_536
 MAX_RECORD_FIELDS = 256
@@ -55,6 +56,24 @@ def _validate_effect_list(raw: Any, version: str, where: str) -> tuple[str, ...]
     _expect(raw == sorted(set(raw)),
             f"{where} must be sorted lexicographically with no duplicates")
     return tuple(raw)
+
+
+def _validate_program_limits(raw: Any) -> None:
+    _expect(isinstance(raw, dict), "limits must be an object")
+    _expect(
+        set(raw) == set(RESOURCE_LIMIT_MAXIMA),
+        "limits must contain exactly 'steps', 'output_lines', and 'host_reads'",
+    )
+    for name, maximum in RESOURCE_LIMIT_MAXIMA.items():
+        value = raw.get(name)
+        _expect(
+            isinstance(value, int) and not isinstance(value, bool),
+            f"limits.{name} must be an integer",
+        )
+        _expect(
+            0 <= value <= maximum,
+            f"limits.{name} must be in [0, {maximum}]",
+        )
 
 
 def _validate_type(raw: Any, version: str, where: str) -> None:
@@ -122,6 +141,8 @@ def verify_program(program: Any) -> None:
     capabilities: tuple[str, ...] = ()
     if _supports(version, 8):
         capabilities = _validate_effect_list(program.get("capabilities"), version, "capabilities")
+    if _supports(version, 10):
+        _validate_program_limits(program.get("limits"))
 
     signatures: dict[str, Signature] = {}
     function_nodes: dict[str, dict[str, Any]] = {}

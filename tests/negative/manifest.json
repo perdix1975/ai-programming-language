@@ -124,5 +124,23 @@
     "contains": [
       "fs.read_text argument must have type 'string'"
     ]
+  },
+  {
+    "file": "v010_missing_limits.apl",
+    "contains": [
+      "limits must be an object"
+    ]
+  },
+  {
+    "file": "v010_extra_limit.apl",
+    "contains": [
+      "limits must contain exactly"
+    ]
+  },
+  {
+    "file": "v010_invalid_step_limit.apl",
+    "contains": [
+      "limits.steps must be in [0, 10000000]"
+    ]
   }
 ]

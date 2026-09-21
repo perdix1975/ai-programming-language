@@ -9,6 +9,7 @@ from .canonical import canonical_text, semantic_hash
 from .errors import AplError
 from .host import DeterministicHost
 from .interpreter import run_program
+from .resources import ResourceLimits
 from .verify import verify_program
 
 
@@ -26,6 +27,17 @@ def _load_host_fixture(path: str | None) -> DeterministicHost | None:
     with Path(path).open("r", encoding="utf-8") as f:
         value = json.load(f)
     return DeterministicHost.from_json_object(value)
+
+
+def _runtime_limits(args: argparse.Namespace) -> ResourceLimits | None:
+    values = (args.max_steps, args.max_output_lines, args.max_host_reads)
+    if all(value is None for value in values):
+        return None
+    return ResourceLimits(
+        steps=args.max_steps,
+        output_lines=args.max_output_lines,
+        host_reads=args.max_host_reads,
+    )
 
 
 def main() -> int:
@@ -49,6 +61,9 @@ def main() -> int:
         metavar="FILE",
         help="deterministic JSON host fixture for fs.read_text/net.get_text",
     )
+    p_run.add_argument("--max-steps", type=int, metavar="N")
+    p_run.add_argument("--max-output-lines", type=int, metavar="N")
+    p_run.add_argument("--max-host-reads", type=int, metavar="N")
 
     p_canon = sub.add_parser("canonicalize", help="emit canonical APL IR")
     p_canon.add_argument("file")
@@ -68,6 +83,7 @@ def main() -> int:
                 program,
                 capabilities=set(args.allow),
                 host=_load_host_fixture(args.host_fixture),
+                limits=_runtime_limits(args),
             )
             if result.type != "unit":
                 print(f"[return {result.type}] {result.value}")
