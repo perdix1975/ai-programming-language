@@ -1,6 +1,6 @@
 # APL Specification v0
 
-Status: **Draft 0.0.9**
+Status: **Draft 0.0.10**
 
 This document defines the executable v0 subset of APL. The purpose of v0 is to establish stable semantic machinery before adding richer host interfaces, contracts, concurrency, or native compilation.
 
@@ -18,7 +18,8 @@ The current reference implementation supports:
 - `0.0.6`: a strict extension adding immutable structural record types and named-field access;
 - `0.0.7`: a strict extension adding deterministic machine-readable traps and an explicit `trap` terminator;
 - `0.0.8`: a strict extension adding exact function effects, exact module capability declarations, and explicit host grants;
-- `0.0.9`: a strict extension adding deterministic fixture-backed filesystem and network read operations.
+- `0.0.9`: a strict extension adding deterministic fixture-backed filesystem and network read operations;
+- `0.0.10`: a strict extension adding deterministic execution resource budgets and host-side tightening.
 
 Older programs retain their declared-version meaning. An operation is valid only when introduced by that program's declared version or an earlier one.
 
@@ -32,7 +33,8 @@ A program object contains:
 - `module`: non-empty module name;
 - `entry`: entry function name;
 - `functions`: non-empty list of function objects;
-- `capabilities`: in Draft 0.0.8+, the exact sorted list of host capabilities required by the module.
+- `capabilities`: in Draft 0.0.8+, the exact sorted list of host capabilities required by the module;
+- `limits`: in Draft 0.0.10+, the exact deterministic execution-budget object.
 
 The entry function must exist and require zero parameters.
 
@@ -598,7 +600,107 @@ Both maps are optional and default to empty. Keys and values must be strings. Un
 
 The fixture is host configuration, not part of the APL program and therefore not part of the program's canonical hash. Reproducible execution requires preserving both the canonical APL program and the host fixture supplied to it.
 
-## 15. Verification
+## 15. Draft 0.0.10 deterministic resource limits
+
+### 15.1 program-declared budgets
+
+Every Draft 0.0.10+ program contains an exact `limits` object:
+
+```json
+{
+  "limits": {
+    "steps": 1000,
+    "output_lines": 10,
+    "host_reads": 5
+  }
+}
+```
+
+The object contains exactly these three integer fields:
+
+| Field | Meaning | Valid range |
+|---|---|---:|
+| `steps` | dynamically executed IR instructions | 0..10,000,000 |
+| `output_lines` | successful `print` output lines | 0..1,000,000 |
+| `host_reads` | `fs.read_text` + `net.get_text` lookups | 0..1,000,000 |
+
+Boolean values are not integers for this purpose. Negative values, values above the stated maxima, missing fields, or extra fields are verification errors.
+
+The `limits` object is part of the APL program. It therefore participates in canonical encoding and canonical program identity/hash.
+
+### 15.2 deterministic step accounting
+
+One `steps` unit is consumed for every dynamically executed IR instruction immediately before that instruction's semantics begin.
+
+This includes:
+
+- scalar/data instructions;
+- `call`, `if`, and `repeat` outer instructions;
+- instructions in the selected `if` branch;
+- instructions in every actually executed `repeat` iteration;
+- `print`, host-read operations, `return`, `yield`, and explicit `trap`.
+
+An unselected `if` branch consumes no runtime steps. A `repeat` consumes one step for the outer `repeat` instruction plus the dynamic instructions in each executed body iteration.
+
+When no step remains, execution traps **before** the next instruction performs its behavior. Thus resource exhaustion can prevent a `print`, host read, return, yield, or explicit trap from taking effect.
+
+This is a semantic instruction budget, not a wall-clock, CPU-time, or scheduler-time limit. Its result is independent of host machine speed.
+
+### 15.3 output-line accounting
+
+Each executed `print` must consume one `output_lines` unit after capability authorization and before the output callback is invoked.
+
+If the output-line budget is exhausted, execution traps before that line is emitted. Previously emitted lines remain emitted.
+
+### 15.4 host-read accounting
+
+Each executed `fs.read_text` or `net.get_text` must consume one `host_reads` unit after capability authorization and after confirming that a host interface exists, but before resource lookup.
+
+Therefore:
+
+- a missing capability produces `apl.capability_denied` before host-read budget use;
+- a missing host produces `apl.host_unavailable` before host-read budget use;
+- once a read attempt reaches deterministic lookup, it consumes one host-read unit even if the exact resource key is absent.
+
+### 15.5 resource-limit trap
+
+Draft 0.0.10 introduces:
+
+```text
+apl.resource_limit
+```
+
+The trap location is the instruction that attempted to consume an exhausted resource. The diagnostic message identifies `steps`, `output_lines`, or `host_reads`.
+
+### 15.6 host-side tightening
+
+The execution host may independently provide optional limits for the same three resource dimensions.
+
+For each dimension, the effective limit is:
+
+- the program-declared value when the host provides no override;
+- the host value for pre-0.0.10 programs that have no language-level declaration;
+- the minimum of program and host values when both exist.
+
+The host therefore may tighten a program's budget but may never enlarge it.
+
+The reference CLI exposes host policy through:
+
+```text
+--max-steps N
+--max-output-lines N
+--max-host-reads N
+```
+
+Host-side overrides are execution configuration. They are not part of the APL program and do not alter its canonical hash.
+
+### 15.7 compatibility and remaining resource dimensions
+
+APL 0.0.1 through 0.0.9 programs are not retroactively required to contain a `limits` object. Their language-defined resource budgets are unlimited, although a host may impose explicit runtime limits.
+
+Draft 0.0.10 does not define memory-size, wall-clock, CPU-time, stack-size, host-response-size, or output-byte limits. Such dimensions must not be inferred from the three budgets defined here.
+
+## 16. Verification
 
 A conforming verifier rejects at least:
 
@@ -619,7 +721,7 @@ A conforming verifier rejects at least:
 
 Execution is defined only for verified programs.
 
-## 16. Canonical textual representation
+## 17. Canonical textual representation
 
 The v0 canonical encoding is JSON with:
 
@@ -633,11 +735,11 @@ Canonical identity is SHA-256 over the UTF-8 bytes of that encoding.
 
 This is an encoding identity, not yet a proof of semantic equivalence between differently structured programs.
 
-## 17. Reference implementation
+## 18. Reference implementation
 
 The Python implementation under `src/apl` is the executable reference for the current draft. Tests under `tests/` form a growing conformance suite.
 
-## 18. Deliberately absent
+## 19. Deliberately absent
 
 Not yet defined:
 
@@ -649,7 +751,7 @@ Not yet defined:
 - live filesystem/network adapters and database capability semantics;
 - file/network/database access;
 - concurrency;
-- resource bounds;
+- memory, wall-clock, CPU-time, and byte-size resource bounds;
 - module imports;
 - binary canonical IR;
 - optimizer/compiler backends;
