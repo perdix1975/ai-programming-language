@@ -20,7 +20,7 @@
 - [x] bounded structured `repeat` with explicit static maximum
 - [x] division/remainder and ordered comparisons with defined edge semantics
 - [x] immutable fixed-length arrays with structured type descriptors
-- [ ] records
+- [x] immutable structural records with named fields
 - [ ] explicit error/trap model
 - [ ] broader conformance suite and negative corpus
 
