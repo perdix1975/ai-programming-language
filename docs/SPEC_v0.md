@@ -2,7 +2,7 @@
 
 Status: **Draft 0.0.8**
 
-This document defines the executable v0 subset of APL. The purpose of v0 is to establish stable semantic machinery before adding richer effects, contracts, capabilities, concurrency, or native compilation.
+This document defines the executable v0 subset of APL. The purpose of v0 is to establish stable semantic machinery before adding richer host interfaces, contracts, concurrency, or native compilation.
 
 ## 1. Versioning
 
@@ -283,7 +283,7 @@ Two arrays may be compared with `eq` when their complete types are identical. Eq
 
 Structured array types may be used in function parameters, function return types, `if` results, and `repeat` carried values. Exact structural type equality is required; there are no implicit array conversions.
 
-`print` remains scalar-only in Draft 0.0.6.
+`print` remains scalar-only through Draft 0.0.8.
 
 ## 11. Draft 0.0.6 instructions
 
