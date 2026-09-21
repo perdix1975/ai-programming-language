@@ -1933,6 +1933,47 @@ def test_contract_boolean_operators_are_eager_and_typed():
         raise AssertionError("expected VerificationError")
 
 
+def test_contract_or_is_eager_for_deterministic_step_accounting():
+    p = {
+        "apl": "0.0.11",
+        "module": "eager_contract",
+        "capabilities": [],
+        "limits": {"steps": 2, "output_lines": 0, "host_reads": 0},
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "effects": [],
+            "requires": [
+                contract_clause(
+                    "eager_or",
+                    "both operands are evaluated",
+                    predicate(
+                        "or",
+                        contract_const("bool", True),
+                        contract_const("bool", True),
+                    ),
+                )
+            ],
+            "ensures": [],
+            "body": [
+                {"op": "const", "id": "answer", "type": "i64", "value": 42},
+                {"op": "return", "value": "answer"},
+            ],
+        }],
+    }
+    # The OR root consumes step 1, the left constant consumes step 2,
+    # and eager evaluation attempts the right constant as step 3.
+    try:
+        run_program(p, output=lambda _: None)
+    except ExecutionError as exc:
+        assert exc.code == "apl.resource_limit"
+        assert exc.where == "main.requires[0].predicate.args[1]"
+    else:
+        raise AssertionError("expected eager right-operand evaluation")
+
+
 def test_contract_predicate_nodes_consume_step_budget():
     p = contract_program()
     p["limits"]["steps"] = 4
