@@ -4,7 +4,7 @@ APL is an experimental programming language and execution architecture designed 
 
 The normative program is not optimized for human typing. It is an explicit typed semantic representation that AI systems can generate, verify, transform, optimize, explain, and compile.
 
-> Status: **pre-alpha / Draft 0.0.8**
+> Status: **pre-alpha / Draft 0.0.9**
 
 ## What exists now
 
@@ -23,6 +23,7 @@ The executable reference core includes:
 - deterministic execution traps with stable machine-readable codes, source locations, and an explicit `trap` terminator;
 - exact per-function host-effect annotations and exact module capability declarations;
 - explicit runtime capability grants, with `console.write` as the first protected host effect;
+- deterministic fixture-backed `fs.read_text` and `net.get_text` host operations;
 - static rejection of direct and mutual recursion in Draft 0.0.2;
 - strict verifier;
 - deterministic canonical encoding and SHA-256 identity;
@@ -30,7 +31,7 @@ The executable reference core includes:
 - CLI;
 - conformance tests and CI on Python 3.11 and 3.13.
 
-APL 0.0.1–0.0.7 programs remain supported. Draft 0.0.8 requires explicit `effects` on every function and an exact module `capabilities` list. Effectful 0.0.8 programs also require separate host grants at execution time.
+APL 0.0.1–0.0.8 programs remain supported. Draft 0.0.9 adds capability-gated filesystem/network read prototypes through a deterministic host fixture; the reference runtime does not perform direct OS filesystem or HTTP access for these operations.
 
 The Python implementation is a bootstrap reference implementation, not the planned high-performance runtime.
 
@@ -64,8 +65,15 @@ apl run examples/trap.apl
 apl verify examples/effects.apl
 apl run examples/effects.apl --allow console.write
 
-apl canonicalize examples/effects.apl
-apl hash examples/effects.apl
+apl verify examples/host_io.apl
+apl run examples/host_io.apl \
+  --allow console.write \
+  --allow fs.read_text \
+  --allow net.get_text \
+  --host-fixture examples/host_fixture.json
+
+apl canonicalize examples/host_io.apl
+apl hash examples/host_io.apl
 ```
 
 ## Why the IR looks like this
@@ -99,7 +107,7 @@ APL semantic IR
     +--> optimizer --> WASM/native/accelerator backend
 ```
 
-The next M2 work adds filesystem/network capability prototypes, a deterministic host interface, and resource limits before contracts, compilation, and AI-native learned primitives.
+The next M2 work adds explicit resource limits and then hardens the host/capability boundary before contracts, compilation, and AI-native learned primitives.
 
 ## License
 
