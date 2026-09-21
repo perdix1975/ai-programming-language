@@ -4,7 +4,7 @@ APL is an experimental programming language and execution architecture designed 
 
 The normative program is not optimized for human typing. It is an explicit typed semantic representation that AI systems can generate, verify, transform, optimize, explain, and compile.
 
-> Status: **pre-alpha / Draft 0.0.7**
+> Status: **pre-alpha / Draft 0.0.8**
 
 ## What exists now
 
@@ -21,6 +21,8 @@ The executable reference core includes:
 - immutable fixed-length arrays with structured type descriptors, checked indexing, and length queries;
 - immutable structural records with named fields and compile-time checked field access;
 - deterministic execution traps with stable machine-readable codes, source locations, and an explicit `trap` terminator;
+- exact per-function host-effect annotations and exact module capability declarations;
+- explicit runtime capability grants, with `console.write` as the first protected host effect;
 - static rejection of direct and mutual recursion in Draft 0.0.2;
 - strict verifier;
 - deterministic canonical encoding and SHA-256 identity;
@@ -28,7 +30,7 @@ The executable reference core includes:
 - CLI;
 - conformance tests and CI on Python 3.11 and 3.13.
 
-APL 0.0.1–0.0.6 programs remain supported. Explicit `trap` requires 0.0.7; existing runtime failures now expose stable `apl.*` trap codes while retaining their previously defined behavior.
+APL 0.0.1–0.0.7 programs remain supported. Draft 0.0.8 requires explicit `effects` on every function and an exact module `capabilities` list. Effectful 0.0.8 programs also require separate host grants at execution time.
 
 The Python implementation is a bootstrap reference implementation, not the planned high-performance runtime.
 
@@ -59,8 +61,11 @@ apl run examples/records.apl
 apl verify examples/trap.apl
 apl run examples/trap.apl
 
-apl canonicalize examples/trap.apl
-apl hash examples/trap.apl
+apl verify examples/effects.apl
+apl run examples/effects.apl --allow console.write
+
+apl canonicalize examples/effects.apl
+apl hash examples/effects.apl
 ```
 
 ## Why the IR looks like this
@@ -94,7 +99,7 @@ APL semantic IR
     +--> optimizer --> WASM/native/accelerator backend
 ```
 
-The next work broadens the negative conformance corpus and then moves into explicit effects/capabilities, contracts, compilation, and AI-native learned primitives.
+The next M2 work adds filesystem/network capability prototypes, a deterministic host interface, and resource limits before contracts, compilation, and AI-native learned primitives.
 
 ## License
 
