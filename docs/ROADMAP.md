@@ -34,7 +34,7 @@
 
 ## M3 — Contracts and richer types
 
-- preconditions/postconditions
+- [x] typed declarative preconditions/postconditions with deterministic runtime enforcement
 - refinement/range types
 - units/dimensions exploration
 - machine-checkable invariants
