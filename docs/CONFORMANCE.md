@@ -44,6 +44,8 @@ The initial corpus covers:
 - missing Draft 0.0.8 capability/effect declarations;
 - effect inference/declaration mismatches;
 - module capability-union mismatches;
-- unknown and duplicate effect declarations.
+- unknown and duplicate effect declarations;
+- Draft 0.0.9 host-effect version gating;
+- deterministic host operation argument typing.
 
 The corpus should grow whenever a verifier bug, ambiguity, or new language rule is introduced.
