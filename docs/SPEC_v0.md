@@ -393,7 +393,6 @@ The `apl.*` namespace is reserved by the language/runtime. Draft 0.0.7 standardi
 | `apl.array_index_oob` | `array.get` index is negative or at least the array length |
 | `apl.repeat_negative_count` | `repeat` runtime count is negative |
 | `apl.repeat_count_exceeds_max` | `repeat` runtime count exceeds its declared static `max` |
-| `apl.capability_denied` | a 0.0.8+ execution lacks a required host capability grant |
 
 These codes replace no prior semantics: they assign stable identities to execution failures whose conditions were already defined in earlier drafts.
 
@@ -479,11 +478,13 @@ Thus a module's static authority footprint is explicit in canonical IR and parti
 
 Verification proves what authority a program declares it needs. Execution separately receives a set of capabilities granted by the host.
 
-Before executing the entry function of a 0.0.8+ program, the runtime verifies that every declared module capability is present in the host grant set. If any required capability is absent, execution traps before program effects begin with:
+Before executing the entry function of a 0.0.8+ program, the runtime verifies that every declared module capability is present in the host grant set. If any required capability is absent, execution traps before program effects begin with the Draft 0.0.8 runtime trap code:
 
 ```text
 apl.capability_denied
 ```
+
+This code is introduced by Draft 0.0.8; it is not part of the earlier Draft 0.0.7 runtime-trap set.
 
 Hosts may grant a superset, but the program may use only effects present in its verified module declaration.
 
