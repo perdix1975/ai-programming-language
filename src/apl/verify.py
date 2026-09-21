@@ -7,14 +7,15 @@ from . import SUPPORTED_LANGUAGE_VERSIONS
 from .errors import VerificationError
 
 SUPPORTED_TYPES = {"i64", "bool", "string", "unit"}
-VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4}
+VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4, "0.0.5": 5}
 MAX_REPEAT_BOUND = 1_000_000
+MAX_ARRAY_LENGTH = 65_536
 
 
 @dataclass(frozen=True)
 class Signature:
-    params: tuple[str, ...]
-    returns: str
+    params: tuple[Any, ...]
+    returns: Any
 
 
 def _fail(message: str) -> None:
@@ -26,13 +27,40 @@ def _expect(condition: bool, message: str) -> None:
         _fail(message)
 
 
-def _value_type(name: str, env: dict[str, str], where: str) -> str:
+def _value_type(name: str, env: dict[str, Any], where: str) -> Any:
     _expect(name in env, f"{where}: reference '{name}' is not defined before use")
     return env[name]
 
 
 def _supports(version: str, level: int) -> bool:
     return VERSION_LEVELS[version] >= level
+
+
+def _validate_type(raw: Any, version: str, where: str) -> None:
+    if isinstance(raw, str):
+        _expect(raw in SUPPORTED_TYPES, f"{where}: unsupported type '{raw}'")
+        return
+
+    _expect(_supports(version, 5),
+            f"{where}: structured types require APL 0.0.5")
+    _expect(isinstance(raw, dict),
+            f"{where}: type must be a primitive name or structured descriptor")
+    _expect(set(raw) == {"array", "len"},
+            f"{where}: array type must contain exactly 'array' and 'len'")
+
+    length = raw.get("len")
+    _expect(isinstance(length, int) and not isinstance(length, bool),
+            f"{where}: array length must be an integer literal")
+    _expect(0 <= length <= MAX_ARRAY_LENGTH,
+            f"{where}: array length must be in [0, {MAX_ARRAY_LENGTH}]")
+
+    element = raw.get("array")
+    _validate_type(element, version, f"{where}.array")
+    _expect(element != "unit", f"{where}: array element type cannot be unit")
+
+
+def _is_array_type(raw: Any) -> bool:
+    return isinstance(raw, dict) and set(raw) == {"array", "len"}
 
 
 def verify_program(program: Any) -> None:
@@ -52,7 +80,7 @@ def verify_program(program: Any) -> None:
     signatures: dict[str, Signature] = {}
     function_nodes: dict[str, dict[str, Any]] = {}
     for fn in functions:
-        name, sig = _read_signature(fn)
+        name, sig = _read_signature(fn, version)
         _expect(name not in signatures, f"duplicate function '{name}'")
         signatures[name] = sig
         function_nodes[name] = fn
@@ -74,7 +102,7 @@ def verify_program(program: Any) -> None:
     _verify_acyclic_calls(call_graph)
 
 
-def _read_signature(fn: Any) -> tuple[str, Signature]:
+def _read_signature(fn: Any, version: str) -> tuple[str, Signature]:
     _expect(isinstance(fn, dict), "function must be an object")
     name = fn.get("name")
     _expect(isinstance(name, str) and bool(name), "function name must be non-empty")
@@ -82,19 +110,19 @@ def _read_signature(fn: Any) -> tuple[str, Signature]:
     params = fn.get("params")
     _expect(isinstance(params, list), f"{name}: params must be a list")
     param_names: set[str] = set()
-    param_types: list[str] = []
+    param_types: list[Any] = []
     for param in params:
         _expect(isinstance(param, dict), f"{name}: parameter must be an object")
         p_name = param.get("name")
         p_type = param.get("type")
         _expect(isinstance(p_name, str) and bool(p_name), f"{name}: invalid parameter name")
         _expect(p_name not in param_names, f"{name}: duplicate parameter '{p_name}'")
-        _expect(p_type in SUPPORTED_TYPES, f"{name}: unsupported parameter type '{p_type}'")
+        _validate_type(p_type, version, f"{name}: parameter '{p_name}'")
         param_names.add(p_name)
         param_types.append(p_type)
 
     returns = fn.get("returns")
-    _expect(returns in SUPPORTED_TYPES, f"{name}: unsupported return type '{returns}'")
+    _validate_type(returns, version, f"{name}: return type")
 
     body = fn.get("body")
     _expect(isinstance(body, list) and body, f"{name}: body must be non-empty")
@@ -126,13 +154,13 @@ def _verify_function_body(
 def _verify_sequence(
     *,
     instructions: Any,
-    env: dict[str, str],
+    env: dict[str, Any],
     function_name: str,
     version: str,
     signatures: dict[str, Signature],
     call_graph: dict[str, set[str]],
     terminator: str,
-    result_type: str,
+    result_type: Any,
     where_prefix: str,
 ) -> None:
     _expect(isinstance(instructions, list) and instructions,
@@ -196,13 +224,22 @@ def _verify_sequence(
                 call_graph=call_graph,
                 where=where,
             )
+        elif op == "array":
+            _expect(_supports(version, 5), f"{where}: array requires APL 0.0.5")
+            _verify_array(ins, env, version, where)
+        elif op == "array.get":
+            _expect(_supports(version, 5), f"{where}: array.get requires APL 0.0.5")
+            _verify_array_get(ins, env, where)
+        elif op == "array.len":
+            _expect(_supports(version, 5), f"{where}: array.len requires APL 0.0.5")
+            _verify_array_len(ins, env, where)
         else:
             _fail(f"{where}: unsupported op '{op}'")
 
     _expect(terminated, f"{where_prefix}: block must end with {terminator}")
 
 
-def _bind_result(ins: dict[str, Any], env: dict[str, str], inferred_type: str, where: str) -> None:
+def _bind_result(ins: dict[str, Any], env: dict[str, Any], inferred_type: str, where: str) -> None:
     result = ins.get("id")
     declared = ins.get("type")
     _expect(isinstance(result, str) and bool(result), f"{where}: result id is required")
@@ -212,7 +249,7 @@ def _bind_result(ins: dict[str, Any], env: dict[str, str], inferred_type: str, w
     env[result] = inferred_type
 
 
-def _verify_const(ins: dict[str, Any], env: dict[str, str], where: str) -> None:
+def _verify_const(ins: dict[str, Any], env: dict[str, Any], where: str) -> None:
     typ = ins.get("type")
     _expect(typ in SUPPORTED_TYPES - {"unit"}, f"{where}: invalid const type '{typ}'")
     value = ins.get("value")
@@ -227,7 +264,7 @@ def _verify_const(ins: dict[str, Any], env: dict[str, str], where: str) -> None:
     _bind_result(ins, env, typ, where)
 
 
-def _binary_args(ins: dict[str, Any], env: dict[str, str], where: str) -> tuple[str, str]:
+def _binary_args(ins: dict[str, Any], env: dict[str, Any], where: str) -> tuple[Any, Any]:
     args = ins.get("args")
     _expect(isinstance(args, list) and len(args) == 2,
             f"{where}: binary op requires exactly two args")
@@ -235,35 +272,37 @@ def _binary_args(ins: dict[str, Any], env: dict[str, str], where: str) -> tuple[
     return _value_type(args[0], env, where), _value_type(args[1], env, where)
 
 
-def _verify_binary_i64(ins: dict[str, Any], env: dict[str, str], where: str) -> None:
+def _verify_binary_i64(ins: dict[str, Any], env: dict[str, Any], where: str) -> None:
     left, right = _binary_args(ins, env, where)
     _expect(left == right == "i64", f"{where}: arithmetic requires i64 operands")
     _bind_result(ins, env, "i64", where)
 
 
-def _verify_ordered_i64(ins: dict[str, Any], env: dict[str, str], where: str) -> None:
+def _verify_ordered_i64(ins: dict[str, Any], env: dict[str, Any], where: str) -> None:
     left, right = _binary_args(ins, env, where)
     _expect(left == right == "i64", f"{where}: ordered comparison requires i64 operands")
     _bind_result(ins, env, "bool", where)
 
 
-def _verify_eq(ins: dict[str, Any], env: dict[str, str], where: str) -> None:
+def _verify_eq(ins: dict[str, Any], env: dict[str, Any], where: str) -> None:
     left, right = _binary_args(ins, env, where)
     _expect(left == right, f"{where}: eq operands must have identical types")
     _expect(left != "unit", f"{where}: unit is not comparable")
     _bind_result(ins, env, "bool", where)
 
 
-def _verify_print(ins: dict[str, Any], env: dict[str, str], where: str) -> None:
+def _verify_print(ins: dict[str, Any], env: dict[str, Any], where: str) -> None:
     args = ins.get("args")
     _expect(isinstance(args, list) and len(args) == 1 and isinstance(args[0], str),
             f"{where}: print requires exactly one SSA id")
-    _value_type(args[0], env, where)
+    typ = _value_type(args[0], env, where)
+    _expect(typ in {"i64", "bool", "string"},
+            f"{where}: print currently supports only scalar values")
 
 
 def _verify_call(
     ins: dict[str, Any],
-    env: dict[str, str],
+    env: dict[str, Any],
     function_name: str,
     signatures: dict[str, Signature],
     call_graph: dict[str, set[str]],
@@ -296,7 +335,7 @@ def _verify_call(
 def _verify_if(
     *,
     ins: dict[str, Any],
-    env: dict[str, str],
+    env: dict[str, Any],
     function_name: str,
     version: str,
     signatures: dict[str, Signature],
@@ -309,7 +348,8 @@ def _verify_if(
             f"{where}: if condition must have type 'bool'")
 
     result_type = ins.get("type")
-    _expect(result_type in SUPPORTED_TYPES - {"unit"},
+    _validate_type(result_type, version, f"{where}: if result type")
+    _expect(result_type != "unit",
             f"{where}: if must produce a non-unit value")
 
     for label in ("then", "else"):
@@ -332,7 +372,7 @@ def _verify_if(
 def _verify_repeat(
     *,
     ins: dict[str, Any],
-    env: dict[str, str],
+    env: dict[str, Any],
     function_name: str,
     version: str,
     signatures: dict[str, Signature],
@@ -386,8 +426,63 @@ def _verify_repeat(
     _bind_result(ins, env, result_type, where)
 
 
+def _verify_array(
+    ins: dict[str, Any],
+    env: dict[str, Any],
+    version: str,
+    where: str,
+) -> None:
+    typ = ins.get("type")
+    _validate_type(typ, version, f"{where}: array result type")
+    _expect(_is_array_type(typ), f"{where}: array op requires an array result type")
+
+    args = ins.get("args")
+    _expect(isinstance(args, list), f"{where}: array args must be a list")
+    expected_len = typ["len"]
+    _expect(len(args) == expected_len,
+            f"{where}: array type length is {expected_len}, got {len(args)} values")
+
+    element_type = typ["array"]
+    for index, arg in enumerate(args):
+        _expect(isinstance(arg, str), f"{where}: array arg {index} must be an SSA id")
+        actual = _value_type(arg, env, where)
+        _expect(actual == element_type,
+                f"{where}: array arg {index} has incompatible element type")
+
+    _bind_result(ins, env, typ, where)
+
+
+def _verify_array_get(
+    ins: dict[str, Any], env: dict[str, Any], where: str
+) -> None:
+    args = ins.get("args")
+    _expect(isinstance(args, list) and len(args) == 2,
+            f"{where}: array.get requires array and index args")
+    _expect(all(isinstance(arg, str) for arg in args),
+            f"{where}: array.get args must be SSA ids")
+
+    array_type = _value_type(args[0], env, where)
+    _expect(_is_array_type(array_type),
+            f"{where}: first array.get arg must be an array")
+    _expect(_value_type(args[1], env, where) == "i64",
+            f"{where}: array.get index must have type 'i64'")
+    _bind_result(ins, env, array_type["array"], where)
+
+
+def _verify_array_len(
+    ins: dict[str, Any], env: dict[str, Any], where: str
+) -> None:
+    args = ins.get("args")
+    _expect(isinstance(args, list) and len(args) == 1 and isinstance(args[0], str),
+            f"{where}: array.len requires exactly one array SSA id")
+    array_type = _value_type(args[0], env, where)
+    _expect(_is_array_type(array_type),
+            f"{where}: array.len arg must be an array")
+    _bind_result(ins, env, "i64", where)
+
+
 def _verify_return(
-    ins: dict[str, Any], env: dict[str, str], returns: str, where: str
+    ins: dict[str, Any], env: dict[str, Any], returns: str, where: str
 ) -> None:
     if returns == "unit":
         _expect("value" not in ins or ins.get("value") is None,
@@ -401,7 +496,7 @@ def _verify_return(
 
 
 def _verify_yield(
-    ins: dict[str, Any], env: dict[str, str], expected_type: str, where: str
+    ins: dict[str, Any], env: dict[str, Any], expected_type: Any, where: str
 ) -> None:
     value = ins.get("value")
     _expect(isinstance(value, str), f"{where}: yield value must be an SSA id")
