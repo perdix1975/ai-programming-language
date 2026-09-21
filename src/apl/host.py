@@ -13,6 +13,12 @@ class DeterministicHost:
     network: Mapping[str, str]
 
     def __post_init__(self) -> None:
+        for label, mapping in (("files", self.files), ("network", self.network)):
+            if not isinstance(mapping, Mapping) or not all(
+                isinstance(k, str) and isinstance(v, str)
+                for k, v in mapping.items()
+            ):
+                raise ValueError(f"host '{label}' must map strings to strings")
         object.__setattr__(self, "files", MappingProxyType(dict(self.files)))
         object.__setattr__(self, "network", MappingProxyType(dict(self.network)))
 
