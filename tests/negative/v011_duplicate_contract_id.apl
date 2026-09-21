@@ -1,0 +1,33 @@
+{
+  "apl":"0.0.11",
+  "module":"v011_duplicate_contract_id",
+  "capabilities":[],
+  "limits":{"steps":20,"output_lines":0,"host_reads":0},
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"i64",
+      "effects":[],
+      "requires":[
+        {
+          "id":"same",
+          "message":"first",
+          "predicate":{"const":{"type":"bool","value":true}}
+        }
+      ],
+      "ensures":[
+        {
+          "id":"same",
+          "message":"second",
+          "predicate":{"const":{"type":"bool","value":true}}
+        }
+      ],
+      "body":[
+        {"op":"const","id":"answer","type":"i64","value":42},
+        {"op":"return","value":"answer"}
+      ]
+    }
+  ]
+}
