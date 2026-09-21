@@ -1,6 +1,6 @@
 # APL Specification v0
 
-Status: **Draft 0.0.10**
+Status: **Draft 0.0.11**
 
 This document defines the executable v0 subset of APL. The purpose of v0 is to establish stable semantic machinery before adding richer host interfaces, contracts, concurrency, or native compilation.
 
@@ -19,7 +19,8 @@ The current reference implementation supports:
 - `0.0.7`: a strict extension adding deterministic machine-readable traps and an explicit `trap` terminator;
 - `0.0.8`: a strict extension adding exact function effects, exact module capability declarations, and explicit host grants;
 - `0.0.9`: a strict extension adding deterministic fixture-backed filesystem and network read operations;
-- `0.0.10`: a strict extension adding deterministic execution resource budgets and host-side tightening.
+- `0.0.10`: a strict extension adding deterministic execution resource budgets and host-side tightening;
+- `0.0.11`: a strict extension adding typed declarative function preconditions and postconditions.
 
 Older programs retain their declared-version meaning. An operation is valid only when introduced by that program's declared version or an earlier one.
 
@@ -46,6 +47,8 @@ A function contains:
 - `params`: ordered typed parameters;
 - `returns`: return type;
 - `effects`: in Draft 0.0.8+, the exact sorted list of host effects the function may perform directly or through calls;
+- `requires`: in Draft 0.0.11+, the ordered precondition clause list;
+- `ensures`: in Draft 0.0.11+, the ordered postcondition clause list;
 - `body`: ordered instruction list.
 
 Function declarations are visible module-wide, so a call may target a function appearing later in the file.
@@ -700,7 +703,140 @@ APL 0.0.1 through 0.0.9 programs are not retroactively required to contain a `li
 
 Draft 0.0.10 does not define memory-size, wall-clock, CPU-time, stack-size, host-response-size, or output-byte limits. Such dimensions must not be inferred from the three budgets defined here.
 
-## 16. Verification
+## 16. Draft 0.0.11 typed function contracts
+
+### 16.1 explicit contract lists
+
+Every Draft 0.0.11+ function contains both `requires` and `ensures` lists, even when either list is empty.
+
+A contract clause has exactly:
+
+```json
+{
+  "id": "positive_input",
+  "message": "x must be positive",
+  "predicate": {
+    "op": "gt",
+    "args": [
+      {"var": "x"},
+      {"const": {"type": "i64", "value": 0}}
+    ]
+  }
+}
+```
+
+Each list may contain at most 64 clauses. Clause identifiers:
+
+- match `[a-z][a-z0-9_.-]{0,63}`;
+- are unique within the function across both `requires` and `ensures`.
+
+A clause message contains 1 through 512 Unicode code points.
+
+Contract clauses are part of canonical APL IR and therefore participate in canonical program identity/hash.
+
+### 16.2 predicate value nodes
+
+A predicate is a typed expression tree. Draft 0.0.11 defines these leaf forms.
+
+Parameter reference:
+
+```json
+{"var":"x"}
+```
+
+The name must identify a function parameter. Contract predicates cannot reference SSA values created by the function body.
+
+Postcondition result reference:
+
+```json
+{"result":true}
+```
+
+The result reference is valid only inside `ensures` of a non-`unit` function. It has exactly the declared function return type. Preconditions execute before a result exists, and `unit` functions have no result value.
+
+Primitive literal:
+
+```json
+{"const":{"type":"i64","value":0}}
+```
+
+Contract literals are limited to the same primitive `i64`, `bool`, and `string` values accepted by ordinary `const`. Structured values can still participate through parameter/result references.
+
+### 16.3 predicate operators
+
+Operator nodes contain exactly `op` and `args`.
+
+Draft 0.0.11 defines:
+
+| Operator | Arity | Operand rule | Result |
+|---|---:|---|---|
+| `eq` | 2 | identical non-`unit` types | `bool` |
+| `lt`, `le`, `gt`, `ge` | 2 | both `i64` | `bool` |
+| `not` | 1 | `bool` | `bool` |
+| `and`, `or` | 2 | both `bool` | `bool` |
+
+The root of every contract predicate must have type `bool`.
+
+`and` and `or` are deliberately **eager** in Draft 0.0.11: operands are evaluated left-to-right and both operands are evaluated. Contracts have no effectful predicate operations, so this avoids value-dependent resource accounting and gives a fixed evaluation shape.
+
+A single predicate is limited to 1,024 nodes and depth 64.
+
+### 16.4 precondition execution
+
+For every function invocation, including the entry function:
+
+1. parameters are bound;
+2. `requires` clauses are evaluated in declaration order;
+3. only if all preconditions pass does the function body begin.
+
+The first false precondition traps with:
+
+```text
+apl.precondition_failed
+```
+
+The trap location is `<function>.requires[<index>]`. The diagnostic message contains the clause identifier and human message.
+
+A failed precondition occurs before any effect in that function body. Effects performed by the caller before making the call remain completed.
+
+### 16.5 postcondition execution
+
+After a function body completes with a normal `return`, `ensures` clauses are evaluated in declaration order with access to:
+
+- the original parameter values;
+- the normal return value through `{"result":true}` for non-`unit` functions.
+
+The first false postcondition traps with:
+
+```text
+apl.postcondition_failed
+```
+
+The trap location is `<function>.ensures[<index>]`.
+
+Postconditions run **after** body effects have occurred. If the function body traps instead of returning normally, postconditions do not run.
+
+### 16.6 purity and static checking
+
+Contract predicates are declarative expressions, not general instruction regions. They cannot call functions, print, access host capabilities, mutate values, loop, or explicitly trap.
+
+The verifier fully type-checks every predicate before execution. A verified predicate therefore has no dynamic name lookup or type ambiguity.
+
+Contract checking does not add to a function's effect set or module capability requirements.
+
+### 16.7 resource accounting
+
+Draft 0.0.11 extends the Draft 0.0.10 `steps` budget: each dynamically evaluated contract predicate node consumes one step immediately before that node is evaluated.
+
+Contract-clause metadata itself consumes no additional step. Eager boolean operators therefore consume steps for both operands.
+
+If the step budget is exhausted during contract evaluation, `apl.resource_limit` occurs at the predicate-node location before a precondition/postcondition result is produced. Resource exhaustion therefore takes precedence over a contract-failure trap when the predicate cannot finish evaluating.
+
+### 16.8 compatibility
+
+APL 0.0.1 through 0.0.10 functions are not retroactively required to contain `requires` or `ensures`. Their execution semantics remain unchanged.
+
+## 17. Verification
 
 A conforming verifier rejects at least:
 
@@ -721,7 +857,7 @@ A conforming verifier rejects at least:
 
 Execution is defined only for verified programs.
 
-## 17. Canonical textual representation
+## 18. Canonical textual representation
 
 The v0 canonical encoding is JSON with:
 
@@ -735,11 +871,11 @@ Canonical identity is SHA-256 over the UTF-8 bytes of that encoding.
 
 This is an encoding identity, not yet a proof of semantic equivalence between differently structured programs.
 
-## 18. Reference implementation
+## 19. Reference implementation
 
 The Python implementation under `src/apl` is the executable reference for the current draft. Tests under `tests/` form a growing conformance suite.
 
-## 19. Deliberately absent
+## 20. Deliberately absent
 
 Not yet defined:
 
@@ -747,7 +883,7 @@ Not yet defined:
 - unbounded/general loops;
 - algebraic data types;
 - trap recovery, handlers, and resumable exceptions;
-- contracts and refinement types;
+- refinement/range types and reusable type invariants;
 - live filesystem/network adapters and database capability semantics;
 - file/network/database access;
 - concurrency;
