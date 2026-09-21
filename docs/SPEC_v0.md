@@ -834,7 +834,7 @@ If the step budget is exhausted during contract evaluation, `apl.resource_limit`
 
 ### 16.8 compatibility
 
-APL 0.0.1 through 0.0.10 functions are not retroactively required to contain `requires` or `ensures`. Their execution semantics remain unchanged.
+APL 0.0.1 through 0.0.10 functions are not retroactively required to contain `requires` or `ensures`. The contract fields themselves are version-gated and are rejected when declared before 0.0.11, preventing legacy programs from silently acquiring newer semantics.
 
 ## 17. Verification
 
