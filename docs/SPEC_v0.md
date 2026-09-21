@@ -853,6 +853,8 @@ A conforming verifier rejects at least:
 - unknown function targets;
 - call arity/type mismatches;
 - recursive call cycles;
+- malformed, ill-typed, or out-of-scope function contract predicates;
+- duplicate function-local contract identifiers;
 - use of an operation before the language version that introduced it.
 
 Execution is defined only for verified programs.
