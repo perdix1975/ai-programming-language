@@ -7,7 +7,8 @@ from . import SUPPORTED_LANGUAGE_VERSIONS
 from .errors import VerificationError
 
 SUPPORTED_TYPES = {"i64", "bool", "string", "unit"}
-VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3}
+VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4}
+MAX_REPEAT_BOUND = 1_000_000
 
 
 @dataclass(frozen=True)
@@ -184,6 +185,17 @@ def _verify_sequence(
                 call_graph=call_graph,
                 where=where,
             )
+        elif op == "repeat":
+            _expect(_supports(version, 4), f"{where}: repeat requires APL 0.0.4")
+            _verify_repeat(
+                ins=ins,
+                env=env,
+                function_name=function_name,
+                version=version,
+                signatures=signatures,
+                call_graph=call_graph,
+                where=where,
+            )
         else:
             _fail(f"{where}: unsupported op '{op}'")
 
@@ -313,6 +325,63 @@ def _verify_if(
             result_type=result_type,
             where_prefix=f"{where}.{label}",
         )
+
+    _bind_result(ins, env, result_type, where)
+
+
+def _verify_repeat(
+    *,
+    ins: dict[str, Any],
+    env: dict[str, str],
+    function_name: str,
+    version: str,
+    signatures: dict[str, Signature],
+    call_graph: dict[str, set[str]],
+    where: str,
+) -> None:
+    count = ins.get("count")
+    _expect(isinstance(count, str), f"{where}: repeat count must be an SSA id")
+    _expect(_value_type(count, env, where) == "i64",
+            f"{where}: repeat count must have type 'i64'")
+
+    bound = ins.get("max")
+    _expect(isinstance(bound, int) and not isinstance(bound, bool),
+            f"{where}: repeat max must be an integer literal")
+    _expect(0 <= bound <= MAX_REPEAT_BOUND,
+            f"{where}: repeat max must be in [0, {MAX_REPEAT_BOUND}]")
+
+    init = ins.get("init")
+    _expect(isinstance(init, str), f"{where}: repeat init must be an SSA id")
+    result_type = _value_type(init, env, where)
+    _expect(result_type != "unit", f"{where}: repeat cannot carry unit")
+
+    index_name = ins.get("index")
+    carry_name = ins.get("carry")
+    _expect(isinstance(index_name, str) and bool(index_name),
+            f"{where}: repeat index must be a non-empty name")
+    _expect(isinstance(carry_name, str) and bool(carry_name),
+            f"{where}: repeat carry must be a non-empty name")
+    _expect(index_name != carry_name,
+            f"{where}: repeat index and carry names must differ")
+    _expect(index_name not in env,
+            f"{where}: repeat index '{index_name}' collides with an outer SSA id")
+    _expect(carry_name not in env,
+            f"{where}: repeat carry '{carry_name}' collides with an outer SSA id")
+
+    branch_env = dict(env)
+    branch_env[index_name] = "i64"
+    branch_env[carry_name] = result_type
+    _verify_sequence(
+        instructions=ins.get("body"),
+        env=branch_env,
+        function_name=function_name,
+        version=version,
+        signatures=signatures,
+        call_graph=call_graph,
+        terminator="yield",
+        result_type=result_type,
+        where_prefix=f"{where}.body",
+    )
 
     _bind_result(ins, env, result_type, where)
 
