@@ -1992,3 +1992,16 @@ def test_legacy_v010_functions_do_not_require_contract_fields():
     p = limited_pure_program()
     verify_program(p)
     assert run_program(p, output=lambda _: None).value == 42
+
+
+
+def test_pre_v011_rejects_contract_fields():
+    p = limited_pure_program()
+    p["functions"][0]["requires"] = []
+    p["functions"][0]["ensures"] = []
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "function contracts require APL 0.0.11" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
