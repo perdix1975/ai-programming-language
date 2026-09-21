@@ -142,5 +142,29 @@
     "contains": [
       "limits.steps must be in [0, 10000000]"
     ]
+  },
+  {
+    "file": "v011_missing_requires.apl",
+    "contains": [
+      "main: requires must be a list"
+    ]
+  },
+  {
+    "file": "v011_result_in_requires.apl",
+    "contains": [
+      "function result is not available in this contract"
+    ]
+  },
+  {
+    "file": "v011_nonbool_contract.apl",
+    "contains": [
+      "contract predicate must have type 'bool'"
+    ]
+  },
+  {
+    "file": "v011_duplicate_contract_id.apl",
+    "contains": [
+      "contract ids must be unique across requires/ensures"
+    ]
   }
 ]
