@@ -8,13 +8,13 @@ from . import SUPPORTED_LANGUAGE_VERSIONS
 from .errors import VerificationError
 
 SUPPORTED_TYPES = {"i64", "bool", "string", "unit"}
-VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4, "0.0.5": 5, "0.0.6": 6, "0.0.7": 7, "0.0.8": 8}
+VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4, "0.0.5": 5, "0.0.6": 6, "0.0.7": 7, "0.0.8": 8, "0.0.9": 9}
 MAX_REPEAT_BOUND = 1_000_000
 MAX_ARRAY_LENGTH = 65_536
 MAX_RECORD_FIELDS = 256
 TRAP_CODE_RE = re.compile(r"[a-z][a-z0-9_.-]{0,63}")
 MAX_TRAP_MESSAGE_LENGTH = 512
-KNOWN_EFFECTS = {"console.write"}
+EFFECT_LEVELS = {"console.write": 8, "fs.read_text": 9, "net.get_text": 9}
 
 
 @dataclass(frozen=True)
@@ -42,12 +42,16 @@ def _supports(version: str, level: int) -> bool:
     return VERSION_LEVELS[version] >= level
 
 
-def _validate_effect_list(raw: Any, where: str) -> tuple[str, ...]:
+def _validate_effect_list(raw: Any, version: str, where: str) -> tuple[str, ...]:
     _expect(isinstance(raw, list), f"{where} must be a list")
     _expect(all(isinstance(item, str) for item in raw),
             f"{where} must contain only strings")
     for item in raw:
-        _expect(item in KNOWN_EFFECTS, f"{where}: unsupported effect '{item}'")
+        _expect(item in EFFECT_LEVELS, f"{where}: unsupported effect '{item}'")
+        _expect(
+            _supports(version, EFFECT_LEVELS[item]),
+            f"{where}: effect '{item}' requires APL 0.0.{EFFECT_LEVELS[item]}",
+        )
     _expect(raw == sorted(set(raw)),
             f"{where} must be sorted lexicographically with no duplicates")
     return tuple(raw)
@@ -117,7 +121,7 @@ def verify_program(program: Any) -> None:
 
     capabilities: tuple[str, ...] = ()
     if _supports(version, 8):
-        capabilities = _validate_effect_list(program.get("capabilities"), "capabilities")
+        capabilities = _validate_effect_list(program.get("capabilities"), version, "capabilities")
 
     signatures: dict[str, Signature] = {}
     function_nodes: dict[str, dict[str, Any]] = {}
@@ -180,7 +184,7 @@ def _read_signature(fn: Any, version: str) -> tuple[str, Signature]:
 
     effects: tuple[str, ...] = ()
     if _supports(version, 8):
-        effects = _validate_effect_list(fn.get("effects"), f"{name}: effects")
+        effects = _validate_effect_list(fn.get("effects"), version, f"{name}: effects")
 
     body = fn.get("body")
     _expect(isinstance(body, list) and body, f"{name}: body must be non-empty")
@@ -318,6 +322,14 @@ def _verify_sequence(
         elif op == "record.get":
             _expect(_supports(version, 6), f"{where}: record.get requires APL 0.0.6")
             _verify_record_get(ins, env, where)
+        elif op == "fs.read_text":
+            _expect(_supports(version, 9), f"{where}: fs.read_text requires APL 0.0.9")
+            _verify_host_text_read(ins, env, where, "fs.read_text")
+            effects_used.add("fs.read_text")
+        elif op == "net.get_text":
+            _expect(_supports(version, 9), f"{where}: net.get_text requires APL 0.0.9")
+            _verify_host_text_read(ins, env, where, "net.get_text")
+            effects_used.add("net.get_text")
         else:
             _fail(f"{where}: unsupported op '{op}'")
 
@@ -571,6 +583,24 @@ def _verify_array_len(
     _expect(_is_array_type(array_type),
             f"{where}: array.len arg must be an array")
     _bind_result(ins, env, "i64", where)
+
+
+def _verify_host_text_read(
+    ins: dict[str, Any],
+    env: dict[str, Any],
+    where: str,
+    op: str,
+) -> None:
+    args = ins.get("args")
+    _expect(
+        isinstance(args, list) and len(args) == 1 and isinstance(args[0], str),
+        f"{where}: {op} requires exactly one string SSA id",
+    )
+    _expect(
+        _value_type(args[0], env, where) == "string",
+        f"{where}: {op} argument must have type 'string'",
+    )
+    _bind_result(ins, env, "string", where)
 
 
 def _verify_record(

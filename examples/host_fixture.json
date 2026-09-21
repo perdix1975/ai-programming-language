@@ -1,0 +1,8 @@
+{
+  "files": {
+    "/message.txt": "local fixture"
+  },
+  "network": {
+    "https://example.test/message": "network fixture"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "apl":"0.0.8",
+  "module":"v008_fs_effect_gate",
+  "capabilities":["fs.read_text"],
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"i64",
+      "effects":["fs.read_text"],
+      "body":[
+        {"op":"const","id":"answer","type":"i64","value":42},
+        {"op":"return","value":"answer"}
+      ]
+    }
+  ]
+}

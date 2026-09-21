@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from .errors import ExecutionError
+from .host import DeterministicHost
 from .verify import verify_program
 
 
@@ -57,6 +58,7 @@ def run_program(
     *,
     output: Callable[[str], None] = print,
     capabilities: set[str] | frozenset[str] | None = None,
+    host: DeterministicHost | None = None,
 ) -> ExecutionResult:
     verify_program(program)
     functions = {fn["name"]: fn for fn in program["functions"]}
@@ -80,6 +82,7 @@ def run_program(
         output=output,
         capabilities=granted,
         enforce_capabilities=enforce_capabilities,
+        host=host,
     )
 
 
@@ -91,6 +94,7 @@ def _execute_function(
     output: Callable[[str], None],
     capabilities: frozenset[str],
     enforce_capabilities: bool,
+    host: DeterministicHost | None,
 ) -> ExecutionResult:
     fn = functions[function_name]
     env = {param["name"]: value for param, value in zip(fn["params"], arguments)}
@@ -105,6 +109,7 @@ def _execute_function(
         output=output,
         capabilities=capabilities,
         enforce_capabilities=enforce_capabilities,
+        host=host,
         terminator="return",
         result_type=fn["returns"],
         where_prefix=function_name,
@@ -121,6 +126,7 @@ def _execute_sequence(
     output: Callable[[str], None],
     capabilities: frozenset[str],
     enforce_capabilities: bool,
+    host: DeterministicHost | None,
     terminator: str,
     result_type: Any,
     where_prefix: str,
@@ -194,6 +200,31 @@ def _execute_sequence(
             record_value = env[ins["record"]]
             env[ins["id"]] = record_value.get(ins["field"])
             types[ins["id"]] = types[ins["record"]]["record"][ins["field"]]
+        elif op in {"fs.read_text", "net.get_text"}:
+            required_capability = op
+            if enforce_capabilities and required_capability not in capabilities:
+                raise ExecutionError(
+                    "apl.capability_denied",
+                    f"capability '{required_capability}' is not granted",
+                    where=where,
+                )
+            if host is None:
+                raise ExecutionError(
+                    "apl.host_unavailable",
+                    f"host interface is required for '{op}'",
+                    where=where,
+                )
+            key = env[ins["args"][0]]
+            value = host.read_text(key) if op == "fs.read_text" else host.get_text(key)
+            if value is None:
+                kind = "path" if op == "fs.read_text" else "URL"
+                raise ExecutionError(
+                    "apl.host_resource_missing",
+                    f"{kind} not present in deterministic host fixture: {key}",
+                    where=where,
+                )
+            env[ins["id"]] = value
+            types[ins["id"]] = "string"
         elif op == "print":
             if enforce_capabilities and "console.write" not in capabilities:
                 raise ExecutionError(
@@ -211,6 +242,7 @@ def _execute_sequence(
                 output=output,
                 capabilities=capabilities,
                 enforce_capabilities=enforce_capabilities,
+                host=host,
             )
             if result.type != "unit":
                 env[ins["id"]] = result.value
@@ -226,6 +258,7 @@ def _execute_sequence(
                 output=output,
                 capabilities=capabilities,
                 enforce_capabilities=enforce_capabilities,
+                host=host,
                 terminator="yield",
                 result_type=ins["type"],
                 where_prefix=f"{where}.{label}",
@@ -267,6 +300,7 @@ def _execute_sequence(
                     output=output,
                     capabilities=capabilities,
                     enforce_capabilities=enforce_capabilities,
+                    host=host,
                     terminator="yield",
                     result_type=carry_type,
                     where_prefix=f"{where}.body",

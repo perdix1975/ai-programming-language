@@ -1,0 +1,19 @@
+{
+  "apl":"0.0.9",
+  "module":"v009_host_arg_type",
+  "capabilities":["fs.read_text"],
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"string",
+      "effects":["fs.read_text"],
+      "body":[
+        {"op":"const","id":"path","type":"i64","value":7},
+        {"op":"fs.read_text","id":"value","type":"string","args":["path"]},
+        {"op":"return","value":"value"}
+      ]
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 from apl.canonical import canonical_text, semantic_hash
 from apl.errors import ExecutionError, VerificationError
+from apl.host import DeterministicHost
 from apl.interpreter import run_program
 from apl.verify import verify_program
 
@@ -1135,3 +1136,219 @@ def test_legacy_print_does_not_require_new_capability_grants():
     p["functions"][0]["body"].insert(3, {"op": "print", "args": ["c"]})
     result = run_program(p, output=lambda _: None)
     assert result.value == 42
+
+
+
+def host_io_program():
+    return {
+        "apl": "0.0.9",
+        "module": "host_io",
+        "capabilities": ["fs.read_text", "net.get_text"],
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "bool",
+            "effects": ["fs.read_text", "net.get_text"],
+            "body": [
+                {"op": "const", "id": "path", "type": "string", "value": "/config.txt"},
+                {
+                    "op": "const",
+                    "id": "url",
+                    "type": "string",
+                    "value": "https://example.test/data",
+                },
+                {
+                    "op": "fs.read_text",
+                    "id": "local",
+                    "type": "string",
+                    "args": ["path"],
+                },
+                {
+                    "op": "net.get_text",
+                    "id": "remote",
+                    "type": "string",
+                    "args": ["url"],
+                },
+                {"op": "eq", "id": "same", "type": "bool", "args": ["local", "remote"]},
+                {"op": "return", "value": "same"},
+            ],
+        }],
+    }
+
+
+def host_fixture():
+    return DeterministicHost(
+        files={"/config.txt": "payload"},
+        network={"https://example.test/data": "payload"},
+    )
+
+
+def test_deterministic_host_fs_and_network_reads():
+    p = host_io_program()
+    verify_program(p)
+    result = run_program(
+        p,
+        output=lambda _: None,
+        capabilities={"fs.read_text", "net.get_text"},
+        host=host_fixture(),
+    )
+    assert result.value is True
+
+
+def test_host_operations_require_interface_after_capability_grant():
+    p = host_io_program()
+    try:
+        run_program(
+            p,
+            output=lambda _: None,
+            capabilities={"fs.read_text", "net.get_text"},
+        )
+    except ExecutionError as exc:
+        assert exc.code == "apl.host_unavailable"
+        assert exc.where == "main[2]"
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_host_missing_resource_has_stable_trap():
+    p = host_io_program()
+    host = DeterministicHost(
+        files={},
+        network={"https://example.test/data": "payload"},
+    )
+    try:
+        run_program(
+            p,
+            output=lambda _: None,
+            capabilities={"fs.read_text", "net.get_text"},
+            host=host,
+        )
+    except ExecutionError as exc:
+        assert exc.code == "apl.host_resource_missing"
+        assert "/config.txt" in exc.message
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_host_capability_denial_happens_before_execution():
+    p = host_io_program()
+    try:
+        run_program(
+            p,
+            output=lambda _: None,
+            capabilities={"fs.read_text"},
+            host=host_fixture(),
+        )
+    except ExecutionError as exc:
+        assert exc.code == "apl.capability_denied"
+        assert exc.where == "<module>"
+        assert "net.get_text" in exc.message
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_host_text_operation_requires_string_argument():
+    p = host_io_program()
+    p["functions"][0]["body"][0] = {
+        "op": "const",
+        "id": "path",
+        "type": "i64",
+        "value": 7,
+    }
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "fs.read_text argument must have type 'string'" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_v008_rejects_v009_host_operation():
+    p = {
+        "apl": "0.0.8",
+        "module": "old_host_op",
+        "capabilities": [],
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "string",
+            "effects": [],
+            "body": [
+                {"op": "const", "id": "path", "type": "string", "value": "/x"},
+                {
+                    "op": "fs.read_text",
+                    "id": "value",
+                    "type": "string",
+                    "args": ["path"],
+                },
+                {"op": "return", "value": "value"},
+            ],
+        }],
+    }
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "fs.read_text requires APL 0.0.9" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_v008_rejects_v009_effect_name():
+    p = pure_v008_program()
+    p["capabilities"] = ["fs.read_text"]
+    p["functions"][0]["effects"] = ["fs.read_text"]
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "effect 'fs.read_text' requires APL 0.0.9" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_deterministic_host_copies_fixture_mappings():
+    files = {"/a": "before"}
+    network = {"https://example.test": "before"}
+    host = DeterministicHost(files=files, network=network)
+    files["/a"] = "after"
+    network["https://example.test"] = "after"
+    assert host.read_text("/a") == "before"
+    assert host.get_text("https://example.test") == "before"
+
+
+def test_deterministic_host_direct_constructor_validation():
+    for files, network in [
+        ({"/a": 1}, {}),
+        ({}, {"https://example.test": 1}),
+    ]:
+        try:
+            DeterministicHost(files=files, network=network)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("expected ValueError")
+
+
+def test_deterministic_host_json_fixture_validation():
+    host = DeterministicHost.from_json_object(
+        {
+            "files": {"/a": "A"},
+            "network": {"https://example.test": "B"},
+        }
+    )
+    assert host.read_text("/a") == "A"
+    assert host.get_text("https://example.test") == "B"
+
+    for invalid in [
+        [],
+        {"files": {"/a": 1}},
+        {"network": {"https://example.test": 1}},
+        {"files": {}, "network": {}, "extra": {}},
+    ]:
+        try:
+            DeterministicHost.from_json_object(invalid)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"expected ValueError for {invalid!r}")

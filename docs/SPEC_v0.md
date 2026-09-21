@@ -1,6 +1,6 @@
 # APL Specification v0
 
-Status: **Draft 0.0.8**
+Status: **Draft 0.0.9**
 
 This document defines the executable v0 subset of APL. The purpose of v0 is to establish stable semantic machinery before adding richer host interfaces, contracts, concurrency, or native compilation.
 
@@ -17,7 +17,8 @@ The current reference implementation supports:
 - `0.0.5`: a strict extension adding structured fixed-length array types and immutable array operations;
 - `0.0.6`: a strict extension adding immutable structural record types and named-field access;
 - `0.0.7`: a strict extension adding deterministic machine-readable traps and an explicit `trap` terminator;
-- `0.0.8`: a strict extension adding exact function effects, exact module capability declarations, and explicit host grants.
+- `0.0.8`: a strict extension adding exact function effects, exact module capability declarations, and explicit host grants;
+- `0.0.9`: a strict extension adding deterministic fixture-backed filesystem and network read operations.
 
 Older programs retain their declared-version meaning. An operation is valid only when introduced by that program's declared version or an earlier one.
 
@@ -504,7 +505,100 @@ Effect annotations are a static audit contract. Capability declarations are the 
 
 A conforming 0.0.8 runtime must not perform a protected host effect without the corresponding grant, even if the program has a syntactically valid capability declaration.
 
-## 14. Verification
+## 14. Draft 0.0.9 deterministic host interface
+
+### 14.1 host model
+
+Draft 0.0.9 introduces the first filesystem/network capability prototypes through a deterministic host interface.
+
+The reference semantic model exposes two immutable string-to-string resource maps:
+
+- `files`: exact path key -> UTF-8 text value;
+- `network`: exact URL key -> text response value.
+
+APL 0.0.9 does **not** define direct operating-system filesystem access, sockets, DNS, HTTP redirects, headers, status codes, clocks, retries, or ambient environment access. A host may obtain resource values however it chooses before execution, but the APL program observes only the deterministic mapping supplied for that run.
+
+Lookup keys are exact Unicode strings. No path normalization, URL canonicalization, case folding, or implicit encoding conversion occurs.
+
+### 14.2 `fs.read_text`
+
+```json
+{
+  "op":"fs.read_text",
+  "id":"content",
+  "type":"string",
+  "args":["path"]
+}
+```
+
+Verification requires exactly one `string` SSA argument and a `string` result. The operation contributes the `fs.read_text` effect.
+
+Execution requires:
+
+- the module to declare `fs.read_text`;
+- the host to grant `fs.read_text`;
+- a deterministic host interface to be present;
+- the exact path key to exist in the host's `files` map.
+
+The returned value is the exact mapped string.
+
+### 14.3 `net.get_text`
+
+```json
+{
+  "op":"net.get_text",
+  "id":"content",
+  "type":"string",
+  "args":["url"]
+}
+```
+
+Verification requires exactly one `string` SSA argument and a `string` result. The operation contributes the `net.get_text` effect.
+
+Execution uses an exact key lookup in the host's `network` map. The operation name anticipates a future network adapter, but Draft 0.0.9 itself defines no live HTTP semantics.
+
+### 14.4 new effects
+
+Draft 0.0.9 adds:
+
+| Effect / capability | Operation |
+|---|---|
+| `fs.read_text` | deterministic file-text lookup |
+| `net.get_text` | deterministic network-text lookup |
+
+These effects follow all Draft 0.0.8 exact-declaration and runtime-grant rules. A 0.0.8 program cannot name them.
+
+### 14.5 host traps
+
+Draft 0.0.9 adds two runtime trap codes:
+
+| Code | Condition |
+|---|---|
+| `apl.host_unavailable` | a host-backed operation executes without a host interface |
+| `apl.host_resource_missing` | the requested exact path/URL key is absent from the deterministic host resources |
+
+Capability preflight happens first. If a required capability grant is missing, `apl.capability_denied` occurs before host lookup.
+
+### 14.6 reference fixture format
+
+The reference CLI accepts a deterministic JSON fixture using `--host-fixture`:
+
+```json
+{
+  "files": {
+    "/message.txt": "local fixture"
+  },
+  "network": {
+    "https://example.test/message": "network fixture"
+  }
+}
+```
+
+Both maps are optional and default to empty. Keys and values must be strings. Unknown top-level fixture keys are rejected.
+
+The fixture is host configuration, not part of the APL program and therefore not part of the program's canonical hash. Reproducible execution requires preserving both the canonical APL program and the host fixture supplied to it.
+
+## 15. Verification
 
 A conforming verifier rejects at least:
 
@@ -525,7 +619,7 @@ A conforming verifier rejects at least:
 
 Execution is defined only for verified programs.
 
-## 15. Canonical textual representation
+## 16. Canonical textual representation
 
 The v0 canonical encoding is JSON with:
 
@@ -539,11 +633,11 @@ Canonical identity is SHA-256 over the UTF-8 bytes of that encoding.
 
 This is an encoding identity, not yet a proof of semantic equivalence between differently structured programs.
 
-## 16. Reference implementation
+## 17. Reference implementation
 
 The Python implementation under `src/apl` is the executable reference for the current draft. Tests under `tests/` form a growing conformance suite.
 
-## 17. Deliberately absent
+## 18. Deliberately absent
 
 Not yet defined:
 
@@ -552,7 +646,7 @@ Not yet defined:
 - algebraic data types;
 - trap recovery, handlers, and resumable exceptions;
 - contracts and refinement types;
-- filesystem/network/database capability semantics;
+- live filesystem/network adapters and database capability semantics;
 - file/network/database access;
 - concurrency;
 - resource bounds;
