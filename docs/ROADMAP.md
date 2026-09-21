@@ -19,7 +19,7 @@
 - [x] acyclic call-graph verification
 - [x] bounded structured `repeat` with explicit static maximum
 - [x] division/remainder and ordered comparisons with defined edge semantics
-- [ ] arrays/records
+- [x] immutable fixed-length arrays with structured type descriptors\n- [ ] records
 - [ ] explicit error/trap model
 - [ ] broader conformance suite and negative corpus
 
