@@ -8,18 +8,20 @@ from . import SUPPORTED_LANGUAGE_VERSIONS
 from .errors import VerificationError
 
 SUPPORTED_TYPES = {"i64", "bool", "string", "unit"}
-VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4, "0.0.5": 5, "0.0.6": 6, "0.0.7": 7}
+VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4, "0.0.5": 5, "0.0.6": 6, "0.0.7": 7, "0.0.8": 8}
 MAX_REPEAT_BOUND = 1_000_000
 MAX_ARRAY_LENGTH = 65_536
 MAX_RECORD_FIELDS = 256
 TRAP_CODE_RE = re.compile(r"[a-z][a-z0-9_.-]{0,63}")
 MAX_TRAP_MESSAGE_LENGTH = 512
+KNOWN_EFFECTS = {"console.write"}
 
 
 @dataclass(frozen=True)
 class Signature:
     params: tuple[Any, ...]
     returns: Any
+    effects: tuple[str, ...]
 
 
 def _fail(message: str) -> None:
@@ -38,6 +40,17 @@ def _value_type(name: str, env: dict[str, Any], where: str) -> Any:
 
 def _supports(version: str, level: int) -> bool:
     return VERSION_LEVELS[version] >= level
+
+
+def _validate_effect_list(raw: Any, where: str) -> tuple[str, ...]:
+    _expect(isinstance(raw, list), f"{where} must be a list")
+    _expect(all(isinstance(item, str) for item in raw),
+            f"{where} must contain only strings")
+    for item in raw:
+        _expect(item in KNOWN_EFFECTS, f"{where}: unsupported effect '{item}'")
+    _expect(raw == sorted(set(raw)),
+            f"{where} must be sorted lexicographically with no duplicates")
+    return tuple(raw)
 
 
 def _validate_type(raw: Any, version: str, where: str) -> None:
@@ -102,6 +115,10 @@ def verify_program(program: Any) -> None:
     _expect(isinstance(functions, list) and len(functions) > 0,
             "functions must be a non-empty list")
 
+    capabilities: tuple[str, ...] = ()
+    if _supports(version, 8):
+        capabilities = _validate_effect_list(program.get("capabilities"), "capabilities")
+
     signatures: dict[str, Signature] = {}
     function_nodes: dict[str, dict[str, Any]] = {}
     for fn in functions:
@@ -126,6 +143,18 @@ def verify_program(program: Any) -> None:
 
     _verify_acyclic_calls(call_graph)
 
+    if _supports(version, 8):
+        required_capabilities = tuple(sorted({
+            effect
+            for signature in signatures.values()
+            for effect in signature.effects
+        }))
+        _expect(
+            capabilities == required_capabilities,
+            "capabilities must exactly match the union of declared function effects: "
+            f"expected {list(required_capabilities)}, got {list(capabilities)}",
+        )
+
 
 def _read_signature(fn: Any, version: str) -> tuple[str, Signature]:
     _expect(isinstance(fn, dict), "function must be an object")
@@ -149,9 +178,13 @@ def _read_signature(fn: Any, version: str) -> tuple[str, Signature]:
     returns = fn.get("returns")
     _validate_type(returns, version, f"{name}: return type")
 
+    effects: tuple[str, ...] = ()
+    if _supports(version, 8):
+        effects = _validate_effect_list(fn.get("effects"), f"{name}: effects")
+
     body = fn.get("body")
     _expect(isinstance(body, list) and body, f"{name}: body must be non-empty")
-    return name, Signature(tuple(param_types), returns)
+    return name, Signature(tuple(param_types), returns, effects)
 
 
 def _verify_function_body(
@@ -163,6 +196,7 @@ def _verify_function_body(
 ) -> None:
     name = fn["name"]
     env = {p["name"]: p["type"] for p in fn["params"]}
+    used_effects: set[str] = set()
     _verify_sequence(
         instructions=fn["body"],
         env=env,
@@ -170,10 +204,18 @@ def _verify_function_body(
         version=version,
         signatures=signatures,
         call_graph=call_graph,
+        effects_used=used_effects,
         terminator="return",
         result_type=fn["returns"],
         where_prefix=name,
     )
+    if _supports(version, 8):
+        declared = set(signatures[name].effects)
+        _expect(
+            used_effects == declared,
+            f"{name}: declared effects {sorted(declared)} do not match "
+            f"inferred effects {sorted(used_effects)}",
+        )
 
 
 def _verify_sequence(
@@ -184,6 +226,7 @@ def _verify_sequence(
     version: str,
     signatures: dict[str, Signature],
     call_graph: dict[str, set[str]],
+    effects_used: set[str],
     terminator: str,
     result_type: Any,
     where_prefix: str,
@@ -230,9 +273,12 @@ def _verify_sequence(
             _verify_eq(ins, env, where)
         elif op == "print":
             _verify_print(ins, env, where)
+            effects_used.add("console.write")
         elif op == "call":
             _expect(_supports(version, 2), f"{where}: call requires APL 0.0.2+")
-            _verify_call(ins, env, function_name, signatures, call_graph, where)
+            _verify_call(
+                ins, env, function_name, signatures, call_graph, effects_used, where
+            )
         elif op == "if":
             _expect(_supports(version, 2), f"{where}: if requires APL 0.0.2+")
             _verify_if(
@@ -242,6 +288,7 @@ def _verify_sequence(
                 version=version,
                 signatures=signatures,
                 call_graph=call_graph,
+                effects_used=effects_used,
                 where=where,
             )
         elif op == "repeat":
@@ -253,6 +300,7 @@ def _verify_sequence(
                 version=version,
                 signatures=signatures,
                 call_graph=call_graph,
+                effects_used=effects_used,
                 where=where,
             )
         elif op == "array":
