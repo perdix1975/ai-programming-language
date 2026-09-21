@@ -39,6 +39,8 @@ jobs:
           apl verify examples/effects.apl
           apl verify examples/host_io.apl
           apl verify examples/limits.apl
+          apl verify examples/contracts.apl
+          apl verify examples/contracts_fail.apl
       - name: Run successful examples
         run: |
           output="$(apl run examples/hello.apl)"
@@ -59,6 +61,8 @@ jobs:
           test "$output" = $'local fixture\nnetwork fixture\n[return string] local fixture'
           output="$(apl run examples/limits.apl)"
           test "$output" = '[return i64] 42'
+          output="$(apl run examples/contracts.apl)"
+          test "$output" = '[return i64] 6'
       - name: Run explicit trap example
         run: |
           set +e
@@ -91,3 +95,11 @@ jobs:
           set -e
           test "$status" -eq 2
           test "$output" = 'APL error: [apl.resource_limit] main[1]: steps resource limit exhausted'
+      - name: Enforce function preconditions
+        run: |
+          set +e
+          output="$(apl run examples/contracts_fail.apl)"
+          status=$?
+          set -e
+          test "$status" -eq 2
+          test "$output" = "APL error: [apl.precondition_failed] main.requires[0]: contract 'enabled' failed: demonstration precondition failed"
