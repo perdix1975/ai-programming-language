@@ -5,11 +5,12 @@ import re
 from typing import Any
 
 from . import SUPPORTED_LANGUAGE_VERSIONS
+from .contracts import verify_function_contracts
 from .errors import VerificationError
 from .resources import RESOURCE_LIMIT_MAXIMA
 
 SUPPORTED_TYPES = {"i64", "bool", "string", "unit"}
-VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4, "0.0.5": 5, "0.0.6": 6, "0.0.7": 7, "0.0.8": 8, "0.0.9": 9, "0.0.10": 10}
+VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4, "0.0.5": 5, "0.0.6": 6, "0.0.7": 7, "0.0.8": 8, "0.0.9": 9, "0.0.10": 10, "0.0.11": 11}
 MAX_REPEAT_BOUND = 1_000_000
 MAX_ARRAY_LENGTH = 65_536
 MAX_RECORD_FIELDS = 256
@@ -206,6 +207,15 @@ def _read_signature(fn: Any, version: str) -> tuple[str, Signature]:
     effects: tuple[str, ...] = ()
     if _supports(version, 8):
         effects = _validate_effect_list(fn.get("effects"), version, f"{name}: effects")
+
+    if _supports(version, 11):
+        verify_function_contracts(
+            requires=fn.get("requires"),
+            ensures=fn.get("ensures"),
+            env_types={param["name"]: param["type"] for param in params},
+            result_type=returns,
+            function_name=name,
+        )
 
     body = fn.get("body")
     _expect(isinstance(body, list) and body, f"{name}: body must be non-empty")
