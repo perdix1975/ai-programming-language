@@ -4,7 +4,7 @@ APL is an experimental programming language and execution architecture designed 
 
 The normative program is not optimized for human typing. It is an explicit typed semantic representation that AI systems can generate, verify, transform, optimize, explain, and compile.
 
-> Status: **pre-alpha / Draft 0.0.6**
+> Status: **pre-alpha / Draft 0.0.7**
 
 ## What exists now
 
@@ -20,6 +20,7 @@ The executable reference core includes:
 - bounded structured `repeat` regions with an explicit static maximum and one typed carried value;
 - immutable fixed-length arrays with structured type descriptors, checked indexing, and length queries;
 - immutable structural records with named fields and compile-time checked field access;
+- deterministic execution traps with stable machine-readable codes, source locations, and an explicit `trap` terminator;
 - static rejection of direct and mutual recursion in Draft 0.0.2;
 - strict verifier;
 - deterministic canonical encoding and SHA-256 identity;
@@ -27,7 +28,7 @@ The executable reference core includes:
 - CLI;
 - conformance tests and CI on Python 3.11 and 3.13.
 
-APL 0.0.1–0.0.5 programs remain supported. Structural record types plus `record` and `record.get` require 0.0.6+.
+APL 0.0.1–0.0.6 programs remain supported. Explicit `trap` requires 0.0.7; existing runtime failures now expose stable `apl.*` trap codes while retaining their previously defined behavior.
 
 The Python implementation is a bootstrap reference implementation, not the planned high-performance runtime.
 
@@ -55,8 +56,11 @@ apl run examples/arrays.apl
 apl verify examples/records.apl
 apl run examples/records.apl
 
-apl canonicalize examples/records.apl
-apl hash examples/records.apl
+apl verify examples/trap.apl
+apl run examples/trap.apl
+
+apl canonicalize examples/trap.apl
+apl hash examples/trap.apl
 ```
 
 ## Why the IR looks like this
@@ -89,7 +93,7 @@ APL semantic IR
     +--> optimizer --> WASM/native/accelerator backend
 ```
 
-The next work adds a first-class trap/error model and a broader negative conformance corpus before moving into capabilities, contracts, compilation, and AI-native learned primitives.
+The next work broadens the negative conformance corpus and then moves into explicit effects/capabilities, contracts, compilation, and AI-native learned primitives.
 
 ## License
 
