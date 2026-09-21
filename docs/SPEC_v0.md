@@ -1,6 +1,6 @@
 # APL Specification v0
 
-Status: **Draft 0.0.2**
+Status: **Draft 0.0.3**
 
 This document defines the executable v0 subset of APL. The purpose of v0 is to establish stable semantic machinery before adding richer effects, contracts, capabilities, concurrency, or native compilation.
 
@@ -11,9 +11,10 @@ The `apl` field is part of every program.
 The current reference implementation supports:
 
 - `0.0.1`: the original scalar/SSA semantic seed;
-- `0.0.2`: a strict extension adding typed function calls and structured `if` regions.
+- `0.0.2`: a strict extension adding typed function calls and structured `if` regions;
+- `0.0.3`: a strict extension adding defined integer division/remainder and ordered `i64` comparisons.
 
-A 0.0.1 program must retain its 0.0.1 meaning. Operations introduced in 0.0.2 are invalid when the program declares 0.0.1.
+Older programs retain their declared-version meaning. An operation is valid only when introduced by that program's declared version or an earlier one.
 
 ## 2. Program representation
 
@@ -39,7 +40,7 @@ A function contains:
 
 Function declarations are visible module-wide, so a call may target a function appearing later in the file.
 
-Draft 0.0.2 rejects direct and mutual recursion. The module call graph must be acyclic.
+Draft 0.0.2 and later reject direct and mutual recursion. The module call graph must be acyclic.
 
 ## 4. Types
 
@@ -159,7 +160,32 @@ Rules:
 
 It is not a function return.
 
-## 8. Verification
+## 8. Draft 0.0.3 instructions
+
+### 8.1 `div`
+
+`div` requires two `i64` operands and produces `i64`. Division truncates toward zero.
+
+Defined traps:
+
+- divisor equal to zero -> execution error;
+- `INT64_MIN / -1` -> signed `i64` overflow execution error.
+
+No host-language or target-CPU division semantics may override these rules.
+
+### 8.2 `rem`
+
+`rem` requires two `i64` operands and produces `i64`. For nonzero divisor it is defined by the truncating quotient:
+
+`r = a - trunc(a / b) * b`
+
+The sign of a nonzero remainder therefore follows the dividend. Division by zero traps. The edge case `INT64_MIN rem -1` is explicitly defined as `0` and does not overflow.
+
+### 8.3 ordered comparisons
+
+`lt`, `le`, `gt`, and `ge` each require two `i64` operands and produce `bool`. They use ordinary signed mathematical integer ordering.
+
+## 9. Verification
 
 A conforming verifier rejects at least:
 
@@ -176,11 +202,11 @@ A conforming verifier rejects at least:
 - unknown function targets;
 - call arity/type mismatches;
 - recursive call cycles;
-- use of 0.0.2 operations from a 0.0.1 program.
+- use of an operation before the language version that introduced it.
 
 Execution is defined only for verified programs.
 
-## 9. Canonical textual representation
+## 10. Canonical textual representation
 
 The v0 canonical encoding is JSON with:
 
@@ -194,17 +220,16 @@ Canonical identity is SHA-256 over the UTF-8 bytes of that encoding.
 
 This is an encoding identity, not yet a proof of semantic equivalence between differently structured programs.
 
-## 10. Reference implementation
+## 11. Reference implementation
 
 The Python implementation under `src/apl` is the executable reference for the current draft. Tests under `tests/` form a growing conformance suite.
 
-## 11. Deliberately absent
+## 12. Deliberately absent
 
 Not yet defined:
 
 - general recursion;
 - loops/iteration;
-- division and ordered comparisons;
 - arrays, records, algebraic data types;
 - explicit trap values/handlers;
 - contracts and refinement types;
