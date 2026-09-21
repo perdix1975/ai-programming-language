@@ -28,6 +28,13 @@ def main() -> int:
 
     p_run = sub.add_parser("run", help="execute an APL IR program")
     p_run.add_argument("file")
+    p_run.add_argument(
+        "--allow",
+        action="append",
+        default=[],
+        metavar="CAPABILITY",
+        help="grant one host capability; may be repeated",
+    )
 
     p_canon = sub.add_parser("canonicalize", help="emit canonical APL IR")
     p_canon.add_argument("file")
@@ -43,7 +50,7 @@ def main() -> int:
             verify_program(program)
             print("valid")
         elif args.command == "run":
-            result = run_program(program)
+            result = run_program(program, capabilities=set(args.allow))
             if result.type != "unit":
                 print(f"[return {result.type}] {result.value}")
         elif args.command == "canonicalize":

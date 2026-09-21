@@ -36,6 +36,7 @@ jobs:
           apl verify examples/arrays.apl
           apl verify examples/records.apl
           apl verify examples/trap.apl
+          apl verify examples/effects.apl
       - name: Run successful examples
         run: |
           output="$(apl run examples/hello.apl)"
@@ -50,6 +51,8 @@ jobs:
           test "$output" = $'23\n[return i64] 23'
           output="$(apl run examples/records.apl)"
           test "$output" = $'37\n[return i64] 37'
+          output="$(apl run examples/effects.apl --allow console.write)"
+          test "$output" = $'hello from APL\n[return i64] 42'
       - name: Run trap example
         run: |
           set +e
@@ -58,3 +61,11 @@ jobs:
           set -e
           test "$status" -eq 2
           test "$output" = 'APL error: [app.demo] main[0]: demonstration trap'
+      - name: Enforce capability denial
+        run: |
+          set +e
+          output="$(apl run examples/effects.apl)"
+          status=$?
+          set -e
+          test "$status" -eq 2
+          test "$output" = "APL error: [apl.capability_denied] <module>: missing capability grants: ['console.write']"
