@@ -22,7 +22,7 @@
 - [x] immutable fixed-length arrays with structured type descriptors
 - [x] immutable structural records with named fields
 - [x] explicit deterministic trap model with stable machine-readable codes
-- [ ] broader conformance suite and negative corpus
+- [x] file-based negative conformance corpus with manifest completeness checks
 
 ## M2 — Effects and safety
 

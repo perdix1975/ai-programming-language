@@ -1,0 +1,29 @@
+{
+  "apl":"0.0.6",
+  "module":"record_unknown_field",
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"string",
+      "body":[
+        {"op":"const","id":"name","type":"string","value":"Ada"},
+        {
+          "op":"record",
+          "id":"person",
+          "type":{"record":{"name":"string"}},
+          "fields":{"name":"name"}
+        },
+        {
+          "op":"record.get",
+          "id":"value",
+          "type":"string",
+          "record":"person",
+          "field":"missing"
+        },
+        {"op":"return","value":"value"}
+      ]
+    }
+  ]
+}

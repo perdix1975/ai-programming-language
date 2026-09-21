@@ -1,0 +1,18 @@
+{
+  "apl":"0.0.5",
+  "module":"array_wrong_arity",
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":{"array":"i64","len":3},
+      "body":[
+        {"op":"const","id":"a","type":"i64","value":1},
+        {"op":"const","id":"b","type":"i64","value":2},
+        {"op":"array","id":"items","type":{"array":"i64","len":3},"args":["a","b"]},
+        {"op":"return","value":"items"}
+      ]
+    }
+  ]
+}

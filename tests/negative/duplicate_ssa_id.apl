@@ -1,0 +1,17 @@
+{
+  "apl":"0.0.1",
+  "module":"duplicate_ssa_id",
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"i64",
+      "body":[
+        {"op":"const","id":"x","type":"i64","value":1},
+        {"op":"const","id":"x","type":"i64","value":2},
+        {"op":"return","value":"x"}
+      ]
+    }
+  ]
+}

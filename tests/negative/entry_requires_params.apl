@@ -1,0 +1,13 @@
+{
+  "apl":"0.0.1",
+  "module":"entry_requires_params",
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[{"name":"x","type":"i64"}],
+      "returns":"i64",
+      "body":[{"op":"return","value":"x"}]
+    }
+  ]
+}

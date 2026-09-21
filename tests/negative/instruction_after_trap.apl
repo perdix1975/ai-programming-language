@@ -1,0 +1,16 @@
+{
+  "apl":"0.0.7",
+  "module":"instruction_after_trap",
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"i64",
+      "body":[
+        {"op":"trap","code":"app.stop","message":"stop"},
+        {"op":"const","id":"x","type":"i64","value":1}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "apl":"0.0.4",
+  "module":"repeat_excessive_max",
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"i64",
+      "body":[
+        {"op":"const","id":"count","type":"i64","value":1},
+        {"op":"const","id":"zero","type":"i64","value":0},
+        {
+          "op":"repeat",
+          "id":"result",
+          "type":"i64",
+          "count":"count",
+          "max":1000001,
+          "init":"zero",
+          "index":"i",
+          "carry":"acc",
+          "body":[{"op":"yield","value":"acc"}]
+        },
+        {"op":"return","value":"result"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+[
+  {"file":"entry_requires_params.apl","contains":["entry function 'main' must not require parameters"]},
+  {"file":"use_before_definition.apl","contains":["not defined before use"]},
+  {"file":"duplicate_ssa_id.apl","contains":["SSA id 'x' is already defined"]},
+  {"file":"call_type_mismatch.apl","contains":["call arg 0 expects 'bool', got 'i64'"]},
+  {"file":"recursive_call_cycle.apl","contains":["recursive call cycle"]},
+  {"file":"repeat_excessive_max.apl","contains":["repeat max must be in [0, 1000000]"]},
+  {"file":"array_wrong_arity.apl","contains":["array type length is 3, got 2 values"]},
+  {"file":"record_unknown_field.apl","contains":["record field 'missing' does not exist"]},
+  {"file":"record_version_gate.apl","contains":["record types require APL 0.0.6"]},
+  {"file":"trap_reserved_namespace.apl","contains":["namespace 'apl.*' is reserved"]},
+  {"file":"instruction_after_trap.apl","contains":["instruction appears after terminator"]},
+  {"file":"unknown_structured_type.apl","contains":["unrecognized structured type descriptor"]}
+]
