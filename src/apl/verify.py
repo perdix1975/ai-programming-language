@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any
 
 from . import SUPPORTED_LANGUAGE_VERSIONS
 from .errors import VerificationError
 
 SUPPORTED_TYPES = {"i64", "bool", "string", "unit"}
-VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4, "0.0.5": 5, "0.0.6": 6}
+VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4, "0.0.5": 5, "0.0.6": 6, "0.0.7": 7}
 MAX_REPEAT_BOUND = 1_000_000
 MAX_ARRAY_LENGTH = 65_536
 MAX_RECORD_FIELDS = 256
+TRAP_CODE_RE = re.compile(r"[a-z][a-z0-9_.-]{0,63}")
+MAX_TRAP_MESSAGE_LENGTH = 512
 
 
 @dataclass(frozen=True)
@@ -204,7 +207,13 @@ def _verify_sequence(
             terminated = True
             continue
 
-        _expect(op not in {"return", "yield"},
+        if op == "trap":
+            _expect(_supports(version, 7), f"{where}: trap requires APL 0.0.7")
+            _verify_trap(ins, where)
+            terminated = True
+            continue
+
+        _expect(op not in {"return", "yield", "trap"},
                 f"{where}: '{op}' is not valid in this block")
 
         if op == "const":
@@ -553,6 +562,17 @@ def _verify_record_get(
     _expect(field_name in fields,
             f"{where}: record field '{field_name}' does not exist")
     _bind_result(ins, env, fields[field_name], where)
+
+
+def _verify_trap(ins: dict[str, Any], where: str) -> None:
+    code = ins.get("code")
+    message = ins.get("message")
+    _expect(isinstance(code, str) and TRAP_CODE_RE.fullmatch(code) is not None,
+            f"{where}: trap code must match [a-z][a-z0-9_.-]{{0,63}}")
+    _expect(not code.startswith("apl.") and code != "apl",
+            f"{where}: trap code namespace 'apl.*' is reserved")
+    _expect(isinstance(message, str) and 1 <= len(message) <= MAX_TRAP_MESSAGE_LENGTH,
+            f"{where}: trap message length must be in [1, {MAX_TRAP_MESSAGE_LENGTH}]")
 
 
 def _verify_return(

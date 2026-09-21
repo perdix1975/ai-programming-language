@@ -1,6 +1,6 @@
 # APL Specification v0
 
-Status: **Draft 0.0.6**
+Status: **Draft 0.0.7**
 
 This document defines the executable v0 subset of APL. The purpose of v0 is to establish stable semantic machinery before adding richer effects, contracts, capabilities, concurrency, or native compilation.
 
@@ -15,7 +15,8 @@ The current reference implementation supports:
 - `0.0.3`: a strict extension adding defined integer division/remainder and ordered `i64` comparisons;
 - `0.0.4`: a strict extension adding bounded structured `repeat` regions;
 - `0.0.5`: a strict extension adding structured fixed-length array types and immutable array operations;
-- `0.0.6`: a strict extension adding immutable structural record types and named-field access.
+- `0.0.6`: a strict extension adding immutable structural record types and named-field access;
+- `0.0.7`: a strict extension adding deterministic machine-readable traps and an explicit `trap` terminator.
 
 Older programs retain their declared-version meaning. An operation is valid only when introduced by that program's declared version or an earlier one.
 
@@ -341,7 +342,76 @@ Records may contain arrays or other records, and arrays may contain records. Rec
 
 Records are immutable values. Draft 0.0.6 defines no field mutation operation.
 
-## 12. Verification
+## 12. Draft 0.0.7 trap model
+
+### 12.1 deterministic trap
+
+A **trap** is abrupt program termination with three observable diagnostic components:
+
+- `code`: a stable machine-readable identifier;
+- `message`: human-readable diagnostic text;
+- `where`: the logical IR execution location reported by the runtime.
+
+A trap produces no normal value. Draft 0.0.7 defines no catch, recovery, resume, or handler mechanism: a trap propagates through structured regions and function calls until execution of the whole program terminates.
+
+The stable semantic interface is the trap `code`. Diagnostic wording may be improved in future compatible implementations without changing the meaning of the code.
+
+### 12.2 explicit `trap`
+
+User programs may terminate deliberately:
+
+```json
+{
+  "op":"trap",
+  "code":"app.invalid_state",
+  "message":"invalid state"
+}
+```
+
+`trap` is a block terminator. It may terminate a function body, an `if` branch, or a `repeat` body in place of that block's ordinary `return` or `yield`. Instructions after it in the same block are invalid.
+
+User-defined trap codes:
+
+- must match `[a-z][a-z0-9_.-]{0,63}`;
+- must not equal `apl` or begin with the reserved `apl.` namespace.
+
+The explicit message must contain from 1 through 512 Unicode code points.
+
+### 12.3 reserved runtime trap codes
+
+The `apl.*` namespace is reserved by the language/runtime. Draft 0.0.7 standardizes these runtime trap codes:
+
+| Code | Condition |
+|---|---|
+| `apl.i64_overflow` | a trapping signed `i64` operation overflows |
+| `apl.division_by_zero` | `div` or `rem` uses divisor zero |
+| `apl.array_index_oob` | `array.get` index is negative or at least the array length |
+| `apl.repeat_negative_count` | `repeat` runtime count is negative |
+| `apl.repeat_count_exceeds_max` | `repeat` runtime count exceeds its declared static `max` |
+
+These codes replace no prior semantics: they assign stable identities to execution failures whose conditions were already defined in earlier drafts.
+
+The reference implementation also uses `apl.internal_invalid_execution` as a defensive implementation guard. A verified conforming program must not reach that condition; it is not an ordinary language-level trap that programs should depend on.
+
+### 12.4 logical location
+
+The reference location format identifies the dynamic structured IR position using function and instruction-region paths, for example:
+
+```text
+main[2]
+main[1].then[0]
+main[3].body[2]
+```
+
+The location is diagnostic metadata. It is not part of type identity, canonical program identity, or the stable trap-code namespace.
+
+### 12.5 side effects and propagation
+
+Effects completed before a trap remain completed. Instructions and effects after the trapping instruction do not execute. An unselected `if` branch still does not execute, so a `trap` in an unselected branch has no effect.
+
+For runtime precondition traps that are specified to occur before entering a region, such as invalid `repeat` count, no body effect occurs before the trap.
+
+## 13. Verification
 
 A conforming verifier rejects at least:
 
@@ -362,7 +432,7 @@ A conforming verifier rejects at least:
 
 Execution is defined only for verified programs.
 
-## 13. Canonical textual representation
+## 14. Canonical textual representation
 
 The v0 canonical encoding is JSON with:
 
@@ -376,18 +446,18 @@ Canonical identity is SHA-256 over the UTF-8 bytes of that encoding.
 
 This is an encoding identity, not yet a proof of semantic equivalence between differently structured programs.
 
-## 14. Reference implementation
+## 15. Reference implementation
 
 The Python implementation under `src/apl` is the executable reference for the current draft. Tests under `tests/` form a growing conformance suite.
 
-## 15. Deliberately absent
+## 16. Deliberately absent
 
 Not yet defined:
 
 - general recursion;
 - unbounded/general loops;
 - algebraic data types;
-- explicit trap values/handlers;
+- trap recovery, handlers, and resumable exceptions;
 - contracts and refinement types;
 - formal effect/capability declarations;
 - file/network/database access;

@@ -7,4 +7,14 @@ class VerificationError(AplError):
 
 
 class ExecutionError(AplError):
-    """Raised when a verified program cannot be executed."""
+    """A deterministic APL execution trap."""
+
+    def __init__(self, code: str, message: str, *, where: str | None = None):
+        self.code = code
+        self.message = message
+        self.where = where
+        super().__init__(self.__str__())
+
+    def __str__(self) -> str:
+        location = f" {self.where}:" if self.where else ""
+        return f"[{self.code}]{location} {self.message}"
