@@ -10,7 +10,7 @@ from .verify import verify_program
 @dataclass(frozen=True)
 class ExecutionResult:
     value: Any
-    type: str
+    type: Any
 
 
 def _i64(value: int, where: str) -> int:
@@ -80,7 +80,7 @@ def _execute_sequence(
     *,
     instructions: list[dict[str, Any]],
     env: dict[str, Any],
-    types: dict[str, str],
+    types: dict[str, Any],
     functions: dict[str, dict[str, Any]],
     function_name: str,
     output: Callable[[str], None],
@@ -123,6 +123,23 @@ def _execute_sequence(
             a, b = (env[x] for x in ins["args"])
             env[ins["id"]] = a == b
             types[ins["id"]] = "bool"
+        elif op == "array":
+            env[ins["id"]] = tuple(env[name] for name in ins["args"])
+            types[ins["id"]] = ins["type"]
+        elif op == "array.get":
+            array_name, index_name = ins["args"]
+            values = env[array_name]
+            item_index = env[index_name]
+            if item_index < 0 or item_index >= len(values):
+                raise ExecutionError(
+                    f"{where}: array index {item_index} out of bounds for length {len(values)}"
+                )
+            env[ins["id"]] = values[item_index]
+            types[ins["id"]] = types[array_name]["array"]
+        elif op == "array.len":
+            array_name = ins["args"][0]
+            env[ins["id"]] = len(env[array_name])
+            types[ins["id"]] = "i64"
         elif op == "print":
             output(_render(env[ins["args"][0]]))
         elif op == "call":
