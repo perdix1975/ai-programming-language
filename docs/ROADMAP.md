@@ -18,7 +18,7 @@
 - [x] structured value-producing `if`
 - [x] acyclic call-graph verification
 - [ ] bounded/structured loops
-- [ ] division and ordered comparisons with defined edge semantics
+- [x] division/remainder and ordered comparisons with defined edge semantics
 - [ ] arrays/records
 - [ ] explicit error/trap model
 - [ ] broader conformance suite and negative corpus
