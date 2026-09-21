@@ -74,7 +74,8 @@ Human-friendly surface syntax can be added later, but it will lower into the sam
 - [Language principles](docs/LANGUAGE_PRINCIPLES.md)
 - [Draft v0 specification](docs/SPEC_v0.md)
 - [Architecture](docs/ARCHITECTURE.md)
-- [Roadmap](docs/ROADMAP.md)\n- [Conformance testing](docs/CONFORMANCE.md)
+- [Roadmap](docs/ROADMAP.md)
+- [Conformance testing](docs/CONFORMANCE.md)
 
 ## Long-term direction
 
