@@ -393,3 +393,164 @@ def test_v003_rejects_repeat():
         assert "repeat requires APL 0.0.4" in str(exc)
     else:
         raise AssertionError("expected VerificationError")
+
+
+
+def array_type_i64_3():
+    return {"array": "i64", "len": 3}
+
+
+def array_program():
+    arr_t = array_type_i64_3()
+    return {
+        "apl": "0.0.5",
+        "module": "arrays",
+        "entry": "main",
+        "functions": [
+            {
+                "name": "second",
+                "params": [{"name": "items", "type": arr_t}],
+                "returns": "i64",
+                "body": [
+                    {"op": "const", "id": "idx", "type": "i64", "value": 1},
+                    {"op": "array.get", "id": "value", "type": "i64", "args": ["items", "idx"]},
+                    {"op": "return", "value": "value"},
+                ],
+            },
+            {
+                "name": "main",
+                "params": [],
+                "returns": "i64",
+                "body": [
+                    {"op": "const", "id": "a", "type": "i64", "value": 10},
+                    {"op": "const", "id": "b", "type": "i64", "value": 20},
+                    {"op": "const", "id": "c", "type": "i64", "value": 30},
+                    {"op": "array", "id": "items", "type": arr_t, "args": ["a", "b", "c"]},
+                    {"op": "call", "id": "second_value", "type": "i64", "function": "second", "args": ["items"]},
+                    {"op": "array.len", "id": "length", "type": "i64", "args": ["items"]},
+                    {"op": "add", "id": "answer", "type": "i64", "args": ["second_value", "length"]},
+                    {"op": "return", "value": "answer"},
+                ],
+            },
+        ],
+    }
+
+
+def test_fixed_array_construction_get_len_and_function_signature():
+    p = array_program()
+    verify_program(p)
+    result = run_program(p, output=lambda _: None)
+    assert result.value == 23
+    assert result.type == "i64"
+
+
+def test_array_get_out_of_bounds_traps():
+    p = array_program()
+    p["functions"][0]["body"][0]["value"] = 3
+    try:
+        run_program(p, output=lambda _: None)
+    except ExecutionError as exc:
+        assert "array index 3 out of bounds for length 3" in str(exc)
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_array_get_negative_index_traps():
+    p = array_program()
+    p["functions"][0]["body"][0]["value"] = -1
+    try:
+        run_program(p, output=lambda _: None)
+    except ExecutionError as exc:
+        assert "array index -1 out of bounds for length 3" in str(exc)
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_array_constructor_rejects_wrong_arity():
+    p = array_program()
+    p["functions"][1]["body"][3]["args"] = ["a", "b"]
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "array type length is 3, got 2 values" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_array_constructor_rejects_element_type_mismatch():
+    p = array_program()
+    main_body = p["functions"][1]["body"]
+    main_body.insert(3, {"op": "const", "id": "flag", "type": "bool", "value": True})
+    main_body[4]["args"][1] = "flag"
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "incompatible element type" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_array_structural_equality():
+    arr_t = {"array": "i64", "len": 2}
+    p = {
+        "apl": "0.0.5",
+        "module": "array_eq",
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "bool",
+            "body": [
+                {"op": "const", "id": "a", "type": "i64", "value": 1},
+                {"op": "const", "id": "b", "type": "i64", "value": 2},
+                {"op": "array", "id": "x", "type": arr_t, "args": ["a", "b"]},
+                {"op": "array", "id": "y", "type": arr_t, "args": ["a", "b"]},
+                {"op": "eq", "id": "same", "type": "bool", "args": ["x", "y"]},
+                {"op": "return", "value": "same"},
+            ],
+        }],
+    }
+    result = run_program(p, output=lambda _: None)
+    assert result.value is True
+
+
+def test_empty_fixed_array_len():
+    empty_t = {"array": "i64", "len": 0}
+    p = {
+        "apl": "0.0.5",
+        "module": "empty_array",
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "body": [
+                {"op": "array", "id": "items", "type": empty_t, "args": []},
+                {"op": "array.len", "id": "length", "type": "i64", "args": ["items"]},
+                {"op": "return", "value": "length"},
+            ],
+        }],
+    }
+    assert run_program(p, output=lambda _: None).value == 0
+
+
+def test_array_type_length_cap():
+    p = array_program()
+    p["functions"][0]["params"][0]["type"]["len"] = 65_537
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "array length must be in [0, 65536]" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_v004_rejects_array_op():
+    p = array_program()
+    p["apl"] = "0.0.4"
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "structured types require APL 0.0.5" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
