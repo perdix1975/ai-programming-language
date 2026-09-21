@@ -321,7 +321,7 @@ The Python implementation under `src/apl` is the executable reference for the cu
 Not yet defined:
 
 - general recursion;
-- loops/iteration;
+- unbounded/general loops;
 - records and algebraic data types;
 - explicit trap values/handlers;
 - contracts and refinement types;
