@@ -7,9 +7,10 @@ from . import SUPPORTED_LANGUAGE_VERSIONS
 from .errors import VerificationError
 
 SUPPORTED_TYPES = {"i64", "bool", "string", "unit"}
-VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4, "0.0.5": 5}
+VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4, "0.0.5": 5, "0.0.6": 6}
 MAX_REPEAT_BOUND = 1_000_000
 MAX_ARRAY_LENGTH = 65_536
+MAX_RECORD_FIELDS = 256
 
 
 @dataclass(frozen=True)
@@ -41,26 +42,47 @@ def _validate_type(raw: Any, version: str, where: str) -> None:
         _expect(raw in SUPPORTED_TYPES, f"{where}: unsupported type '{raw}'")
         return
 
-    _expect(_supports(version, 5),
-            f"{where}: structured types require APL 0.0.5")
     _expect(isinstance(raw, dict),
             f"{where}: type must be a primitive name or structured descriptor")
-    _expect(set(raw) == {"array", "len"},
-            f"{where}: array type must contain exactly 'array' and 'len'")
 
-    length = raw.get("len")
-    _expect(isinstance(length, int) and not isinstance(length, bool),
-            f"{where}: array length must be an integer literal")
-    _expect(0 <= length <= MAX_ARRAY_LENGTH,
-            f"{where}: array length must be in [0, {MAX_ARRAY_LENGTH}]")
+    if set(raw) == {"array", "len"}:
+        _expect(_supports(version, 5),
+                f"{where}: array types require APL 0.0.5")
+        length = raw.get("len")
+        _expect(isinstance(length, int) and not isinstance(length, bool),
+                f"{where}: array length must be an integer literal")
+        _expect(0 <= length <= MAX_ARRAY_LENGTH,
+                f"{where}: array length must be in [0, {MAX_ARRAY_LENGTH}]")
+        element = raw.get("array")
+        _validate_type(element, version, f"{where}.array")
+        _expect(element != "unit", f"{where}: array element type cannot be unit")
+        return
 
-    element = raw.get("array")
-    _validate_type(element, version, f"{where}.array")
-    _expect(element != "unit", f"{where}: array element type cannot be unit")
+    if set(raw) == {"record"}:
+        _expect(_supports(version, 6),
+                f"{where}: record types require APL 0.0.6")
+        fields = raw.get("record")
+        _expect(isinstance(fields, dict),
+                f"{where}: record descriptor must map field names to types")
+        _expect(len(fields) <= MAX_RECORD_FIELDS,
+                f"{where}: record may contain at most {MAX_RECORD_FIELDS} fields")
+        for field_name, field_type in fields.items():
+            _expect(isinstance(field_name, str) and bool(field_name),
+                    f"{where}: record field names must be non-empty strings")
+            _validate_type(field_type, version, f"{where}.record.{field_name}")
+            _expect(field_type != "unit",
+                    f"{where}: record field '{field_name}' cannot have type unit")
+        return
+
+    _fail(f"{where}: unrecognized structured type descriptor")
 
 
 def _is_array_type(raw: Any) -> bool:
     return isinstance(raw, dict) and set(raw) == {"array", "len"}
+
+
+def _is_record_type(raw: Any) -> bool:
+    return isinstance(raw, dict) and set(raw) == {"record"} and isinstance(raw.get("record"), dict)
 
 
 def verify_program(program: Any) -> None:
@@ -233,6 +255,12 @@ def _verify_sequence(
         elif op == "array.len":
             _expect(_supports(version, 5), f"{where}: array.len requires APL 0.0.5")
             _verify_array_len(ins, env, where)
+        elif op == "record":
+            _expect(_supports(version, 6), f"{where}: record requires APL 0.0.6")
+            _verify_record(ins, env, version, where)
+        elif op == "record.get":
+            _expect(_supports(version, 6), f"{where}: record.get requires APL 0.0.6")
+            _verify_record_get(ins, env, where)
         else:
             _fail(f"{where}: unsupported op '{op}'")
 
@@ -480,6 +508,51 @@ def _verify_array_len(
     _expect(_is_array_type(array_type),
             f"{where}: array.len arg must be an array")
     _bind_result(ins, env, "i64", where)
+
+
+def _verify_record(
+    ins: dict[str, Any],
+    env: dict[str, Any],
+    version: str,
+    where: str,
+) -> None:
+    typ = ins.get("type")
+    _validate_type(typ, version, f"{where}: record result type")
+    _expect(_is_record_type(typ), f"{where}: record op requires a record result type")
+
+    fields = ins.get("fields")
+    _expect(isinstance(fields, dict), f"{where}: record fields must be an object")
+    expected_fields = typ["record"]
+    _expect(set(fields) == set(expected_fields),
+            f"{where}: record fields must exactly match the record type")
+
+    for field_name, source in fields.items():
+        _expect(isinstance(source, str),
+                f"{where}: record field '{field_name}' must reference an SSA id")
+        actual = _value_type(source, env, where)
+        _expect(actual == expected_fields[field_name],
+                f"{where}: record field '{field_name}' has incompatible type")
+
+    _bind_result(ins, env, typ, where)
+
+
+def _verify_record_get(
+    ins: dict[str, Any], env: dict[str, Any], where: str
+) -> None:
+    record_name = ins.get("record")
+    field_name = ins.get("field")
+    _expect(isinstance(record_name, str),
+            f"{where}: record.get record must be an SSA id")
+    _expect(isinstance(field_name, str) and bool(field_name),
+            f"{where}: record.get field must be a non-empty string")
+
+    record_type = _value_type(record_name, env, where)
+    _expect(_is_record_type(record_type),
+            f"{where}: record.get source must be a record")
+    fields = record_type["record"]
+    _expect(field_name in fields,
+            f"{where}: record field '{field_name}' does not exist")
+    _bind_result(ins, env, fields[field_name], where)
 
 
 def _verify_return(
