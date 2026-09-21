@@ -5,6 +5,7 @@ from typing import Any, Callable
 
 from .errors import ExecutionError
 from .host import DeterministicHost
+from .resources import ExecutionBudget, ResourceLimits
 from .verify import verify_program
 
 
@@ -59,9 +60,17 @@ def run_program(
     output: Callable[[str], None] = print,
     capabilities: set[str] | frozenset[str] | None = None,
     host: DeterministicHost | None = None,
+    limits: ResourceLimits | None = None,
 ) -> ExecutionResult:
     verify_program(program)
     functions = {fn["name"]: fn for fn in program["functions"]}
+
+    declared_limits = (
+        ResourceLimits.from_program_object(program["limits"])
+        if _version_at_least(program["apl"], (0, 0, 10))
+        else ResourceLimits()
+    )
+    budget = ExecutionBudget.from_limits(declared_limits.restricted_by(limits))
 
     enforce_capabilities = _version_at_least(program["apl"], (0, 0, 8))
     granted = frozenset(capabilities or ())
@@ -83,6 +92,7 @@ def run_program(
         capabilities=granted,
         enforce_capabilities=enforce_capabilities,
         host=host,
+        budget=budget,
     )
 
 
@@ -95,6 +105,7 @@ def _execute_function(
     capabilities: frozenset[str],
     enforce_capabilities: bool,
     host: DeterministicHost | None,
+    budget: ExecutionBudget,
 ) -> ExecutionResult:
     fn = functions[function_name]
     env = {param["name"]: value for param, value in zip(fn["params"], arguments)}
@@ -110,6 +121,7 @@ def _execute_function(
         capabilities=capabilities,
         enforce_capabilities=enforce_capabilities,
         host=host,
+        budget=budget,
         terminator="return",
         result_type=fn["returns"],
         where_prefix=function_name,
@@ -127,6 +139,7 @@ def _execute_sequence(
     capabilities: frozenset[str],
     enforce_capabilities: bool,
     host: DeterministicHost | None,
+    budget: ExecutionBudget,
     terminator: str,
     result_type: Any,
     where_prefix: str,
@@ -134,6 +147,7 @@ def _execute_sequence(
     for index, ins in enumerate(instructions):
         op = ins["op"]
         where = f"{where_prefix}[{index}]"
+        budget.consume_step(where)
 
         if op == terminator:
             if result_type == "unit":
@@ -214,6 +228,7 @@ def _execute_sequence(
                     f"host interface is required for '{op}'",
                     where=where,
                 )
+            budget.consume_host_read(where)
             key = env[ins["args"][0]]
             value = host.read_text(key) if op == "fs.read_text" else host.get_text(key)
             if value is None:
@@ -232,6 +247,7 @@ def _execute_sequence(
                     "capability 'console.write' is not granted",
                     where=where,
                 )
+            budget.consume_output_line(where)
             output(_render(env[ins["args"][0]]))
         elif op == "call":
             target = ins["function"]
@@ -243,6 +259,7 @@ def _execute_sequence(
                 capabilities=capabilities,
                 enforce_capabilities=enforce_capabilities,
                 host=host,
+                budget=budget,
             )
             if result.type != "unit":
                 env[ins["id"]] = result.value
@@ -259,6 +276,7 @@ def _execute_sequence(
                 capabilities=capabilities,
                 enforce_capabilities=enforce_capabilities,
                 host=host,
+                budget=budget,
                 terminator="yield",
                 result_type=ins["type"],
                 where_prefix=f"{where}.{label}",
@@ -301,6 +319,7 @@ def _execute_sequence(
                     capabilities=capabilities,
                     enforce_capabilities=enforce_capabilities,
                     host=host,
+                    budget=budget,
                     terminator="yield",
                     result_type=carry_type,
                     where_prefix=f"{where}.body",
