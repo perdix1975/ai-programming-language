@@ -7,6 +7,7 @@ from typing import Any
 
 from .canonical import canonical_text, semantic_hash
 from .errors import AplError
+from .host import DeterministicHost
 from .interpreter import run_program
 from .verify import verify_program
 
@@ -17,6 +18,14 @@ def _load(path: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("APL file root must be an object")
     return value
+
+
+def _load_host_fixture(path: str | None) -> DeterministicHost | None:
+    if path is None:
+        return None
+    with Path(path).open("r", encoding="utf-8") as f:
+        value = json.load(f)
+    return DeterministicHost.from_json_object(value)
 
 
 def main() -> int:
@@ -35,6 +44,11 @@ def main() -> int:
         metavar="CAPABILITY",
         help="grant one host capability; may be repeated",
     )
+    p_run.add_argument(
+        "--host-fixture",
+        metavar="FILE",
+        help="deterministic JSON host fixture for fs.read_text/net.get_text",
+    )
 
     p_canon = sub.add_parser("canonicalize", help="emit canonical APL IR")
     p_canon.add_argument("file")
@@ -50,7 +64,11 @@ def main() -> int:
             verify_program(program)
             print("valid")
         elif args.command == "run":
-            result = run_program(program, capabilities=set(args.allow))
+            result = run_program(
+                program,
+                capabilities=set(args.allow),
+                host=_load_host_fixture(args.host_fixture),
+            )
             if result.type != "unit":
                 print(f"[return {result.type}] {result.value}")
         elif args.command == "canonicalize":
