@@ -251,7 +251,8 @@ def _bind_result(ins: dict[str, Any], env: dict[str, Any], inferred_type: Any, w
 
 def _verify_const(ins: dict[str, Any], env: dict[str, Any], where: str) -> None:
     typ = ins.get("type")
-    _expect(typ in SUPPORTED_TYPES - {"unit"}, f"{where}: invalid const type '{typ}'")
+    _expect(isinstance(typ, str) and typ in SUPPORTED_TYPES - {"unit"},
+            f"{where}: invalid const type '{typ}'")
     value = ins.get("value")
 
     valid = (
@@ -296,7 +297,7 @@ def _verify_print(ins: dict[str, Any], env: dict[str, Any], where: str) -> None:
     _expect(isinstance(args, list) and len(args) == 1 and isinstance(args[0], str),
             f"{where}: print requires exactly one SSA id")
     typ = _value_type(args[0], env, where)
-    _expect(typ in {"i64", "bool", "string"},
+    _expect(isinstance(typ, str) and typ in {"i64", "bool", "string"},
             f"{where}: print currently supports only scalar values")
 
 
