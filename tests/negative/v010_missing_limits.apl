@@ -1,0 +1,18 @@
+{
+  "apl":"0.0.10",
+  "module":"v010_missing_limits",
+  "capabilities":[],
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"i64",
+      "effects":[],
+      "body":[
+        {"op":"const","id":"answer","type":"i64","value":42},
+        {"op":"return","value":"answer"}
+      ]
+    }
+  ]
+}
