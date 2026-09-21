@@ -106,5 +106,23 @@
     "contains": [
       "sorted lexicographically with no duplicates"
     ]
+  },
+  {
+    "file": "v008_fs_effect_gate.apl",
+    "contains": [
+      "effect 'fs.read_text' requires APL 0.0.9"
+    ]
+  },
+  {
+    "file": "v008_fs_op_gate.apl",
+    "contains": [
+      "fs.read_text requires APL 0.0.9"
+    ]
+  },
+  {
+    "file": "v009_host_arg_type.apl",
+    "contains": [
+      "fs.read_text argument must have type 'string'"
+    ]
   }
 ]
