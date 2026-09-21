@@ -4,7 +4,7 @@ APL is an experimental programming language and execution architecture designed 
 
 The normative program is not optimized for human typing. It is an explicit typed semantic representation that AI systems can generate, verify, transform, optimize, explain, and compile.
 
-> Status: **pre-alpha / Draft 0.0.2**
+> Status: **pre-alpha / Draft 0.0.3**
 
 ## What exists now
 
@@ -13,7 +13,7 @@ The executable reference core includes:
 - versioned JSON semantic IR;
 - SSA-style value identities;
 - types: `i64`, `bool`, `string`, `unit`;
-- arithmetic and equality;
+- defined `i64` arithmetic, including truncating `div`/`rem`, plus equality and ordered comparisons;
 - explicit `print` effect;
 - typed function calls with forward references;
 - structured value-producing `if` regions using `yield`;
@@ -24,7 +24,7 @@ The executable reference core includes:
 - CLI;
 - conformance tests and CI on Python 3.11 and 3.13.
 
-APL 0.0.1 programs remain supported. New `call` and `if` operations require 0.0.2.
+APL 0.0.1 and 0.0.2 programs remain supported. `call` and `if` require 0.0.2+, while `div`, `rem`, `lt`, `le`, `gt`, and `ge` require 0.0.3+.
 
 The Python implementation is a bootstrap reference implementation, not the planned high-performance runtime.
 
@@ -40,8 +40,11 @@ apl run examples/hello.apl
 apl verify examples/functions_if.apl
 apl run examples/functions_if.apl
 
-apl canonicalize examples/functions_if.apl
-apl hash examples/functions_if.apl
+apl verify examples/arithmetic.apl
+apl run examples/arithmetic.apl
+
+apl canonicalize examples/arithmetic.apl
+apl hash examples/arithmetic.apl
 ```
 
 ## Why the IR looks like this
@@ -74,7 +77,7 @@ APL semantic IR
     +--> optimizer --> WASM/native/accelerator backend
 ```
 
-The next work expands the real programming core with bounded iteration, defined division/comparison semantics, arrays/records, and an explicit trap model before moving into capabilities, contracts, compilation, and AI-native learned primitives.
+The next work expands the real programming core with bounded iteration, arrays/records, and an explicit trap model before moving into capabilities, contracts, compilation, and AI-native learned primitives.
 
 ## License
 
