@@ -3900,6 +3900,23 @@ def test_v015_requires_explicit_primitive_list():
         raise AssertionError("expected VerificationError")
 
 
+def test_v015_rejects_direct_source_call_to_generated_primitive_function():
+    program = semantic_primitive_program()
+    program["functions"][0]["body"][1] = {
+        "op": "call",
+        "id": "answer",
+        "type": "i64",
+        "function": primitive_function_name(PRIMITIVE_SQUARE_PLUS_ONE_ID),
+        "args": ["x"],
+    }
+    try:
+        verify_program(program)
+    except VerificationError as exc:
+        assert "ordinary calls cannot target reserved generated primitive functions" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
 def test_v015_reserves_generated_primitive_function_namespace():
     program = semantic_primitive_program()
     program["functions"][0]["name"] = primitive_function_name(
