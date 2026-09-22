@@ -36,7 +36,7 @@
 
 - [x] typed declarative preconditions/postconditions with deterministic runtime enforcement
 - [x] structural bounded i64 range types with explicit refinement/widening
-- [ ] units/dimensions exploration
+- [x] symbolic unit-vector quantity types with static multiplication/division algebra
 - [ ] machine-checkable invariants
 
 ## M4 — Compiler path
