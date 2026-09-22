@@ -41,10 +41,10 @@
 
 ## M4 — Compiler path
 
-- normalized lower IR
-- WASM backend
-- optimization equivalence tests
-- differential testing: interpreter vs compiled output
+- [x] normalized lower IR with deterministic CFG/block-parameter SSA and independent verifier
+- [ ] WASM backend
+- [ ] optimization equivalence tests
+- [ ] differential testing: interpreter vs compiled output
 
 ## M5 — AI-native layer
 

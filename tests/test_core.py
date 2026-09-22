@@ -2,6 +2,7 @@ from apl.canonical import canonical_text, semantic_hash
 from apl.errors import ExecutionError, VerificationError
 from apl.host import DeterministicHost
 from apl.interpreter import run_program
+from apl.lir import lower_hash, lower_program, verify_lir
 from apl.resources import ResourceLimits
 from apl.verify import verify_program
 
@@ -3214,3 +3215,299 @@ def test_contract_invariant_reference_consumes_call_and_definition_steps():
         assert ".invariant[positive].args[1]" in exc.where
     else:
         raise AssertionError("expected ExecutionError")
+
+
+
+def _all_lir_ops(lir):
+    for fn in lir["functions"]:
+        for block in fn["blocks"]:
+            for op in block["ops"]:
+                yield op
+            yield block["term"]
+
+
+def test_lir_simple_lowering_is_verified_and_normalized():
+    lir = lower_program(sample_program())
+    verify_lir(lir)
+    assert lir["apl_lir"] == "0.1"
+    assert lir["source_apl"] == "0.0.1"
+    assert lir["entry"] == "main"
+    assert lir["runtime"]["capability_grants_required"] is False
+    assert lir["runtime"]["limits"] == {
+        "steps": None,
+        "output_lines": None,
+        "host_reads": None,
+    }
+
+    forbidden = {"if", "repeat", "yield"}
+    assert not any(op.get("op") in forbidden for op in _all_lir_ops(lir))
+    assert any(op.get("op") == "budget.step" for op in _all_lir_ops(lir))
+
+
+def test_lir_alpha_renaming_does_not_change_normalized_output():
+    first = sample_program()
+    second = sample_program()
+    body = second["functions"][0]["body"]
+    body[0]["id"] = "left"
+    body[1]["id"] = "right"
+    body[2]["id"] = "answer"
+    body[2]["args"] = ["left", "right"]
+    body[3]["value"] = "answer"
+
+    assert lower_program(first) == lower_program(second)
+    assert lower_hash(first) == lower_hash(second)
+
+
+def test_lir_function_order_is_normalized():
+    first = functions_if_program()
+    second = functions_if_program()
+    second["functions"] = list(reversed(second["functions"]))
+    assert lower_program(first) == lower_program(second)
+
+
+def test_lir_if_becomes_explicit_cfg_with_block_parameters():
+    lir = lower_program(functions_if_program())
+    choose = next(fn for fn in lir["functions"] if fn["name"] == "choose")
+    terms = [block["term"]["op"] for block in choose["blocks"]]
+    assert "cond_br" in terms
+    assert all(
+        op.get("op") not in {"if", "yield"}
+        for block in choose["blocks"]
+        for op in block["ops"]
+    )
+    assert any(block["params"] for block in choose["blocks"][1:])
+
+
+def _nested_repeat_if_program():
+    return {
+        "apl": "0.0.4",
+        "module": "nested_repeat_if",
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "body": [
+                {"op": "const", "id": "count", "type": "i64", "value": 3},
+                {"op": "const", "id": "zero", "type": "i64", "value": 0},
+                {
+                    "op": "repeat",
+                    "id": "total",
+                    "type": "i64",
+                    "count": "count",
+                    "max": 3,
+                    "init": "zero",
+                    "index": "i",
+                    "carry": "acc",
+                    "body": [
+                        {"op": "const", "id": "flag", "type": "bool", "value": True},
+                        {
+                            "op": "if",
+                            "id": "next",
+                            "type": "i64",
+                            "cond": "flag",
+                            "then": [
+                                {
+                                    "op": "add",
+                                    "id": "sum",
+                                    "type": "i64",
+                                    "args": ["acc", "i"],
+                                },
+                                {"op": "yield", "value": "sum"},
+                            ],
+                            "else": [{"op": "yield", "value": "acc"}],
+                        },
+                        {"op": "yield", "value": "next"},
+                    ],
+                },
+                {"op": "return", "value": "total"},
+            ],
+        }],
+    }
+
+
+def test_lir_repeat_with_nested_if_uses_current_block_index():
+    source = _nested_repeat_if_program()
+    assert run_program(source, output=lambda _: None).value == 3
+    lir = lower_program(source)
+    verify_lir(lir)
+    ops = list(_all_lir_ops(lir))
+    assert any(op.get("op") == "repeat.guard" for op in ops)
+    assert any(op.get("op") == "cond_br" for op in ops)
+    assert not any(op.get("op") == "repeat" for op in ops)
+
+
+def test_lir_verifier_rejects_branch_argument_type_mismatch():
+    lir = lower_program(functions_if_program())
+    choose = next(fn for fn in lir["functions"] if fn["name"] == "choose")
+    branch_block = next(
+        block for block in choose["blocks"]
+        if block["term"]["op"] == "cond_br"
+    )
+    edge = branch_block["term"]["then"]
+    assert len(edge["args"]) >= 2
+    edge["args"][1] = choose["params"][0]["id"]
+
+    try:
+        verify_lir(lir)
+    except VerificationError as exc:
+        assert "branch arg 1 type mismatch" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_lir_verifier_rejects_non_dense_normalized_value_ids():
+    lir = lower_program(sample_program())
+    main = lir["functions"][0]
+    first_value_op = next(op for op in main["blocks"][0]["ops"] if "id" in op)
+    old_id = first_value_op["id"]
+    first_value_op["id"] = "v999"
+    for block in main["blocks"]:
+        for op in block["ops"]:
+            for key in ("arg", "cond", "count", "record"):
+                if op.get(key) == old_id:
+                    op[key] = "v999"
+            if isinstance(op.get("args"), list):
+                op["args"] = ["v999" if x == old_id else x for x in op["args"]]
+            if isinstance(op.get("fields"), dict):
+                op["fields"] = {
+                    key: ("v999" if value == old_id else value)
+                    for key, value in op["fields"].items()
+                }
+        term = block["term"]
+        if term.get("value") == old_id:
+            term["value"] = "v999"
+        if term.get("cond") == old_id:
+            term["cond"] = "v999"
+        for edge_name in ("then", "else"):
+            if isinstance(term.get(edge_name), dict):
+                term[edge_name]["args"] = [
+                    "v999" if x == old_id else x
+                    for x in term[edge_name]["args"]
+                ]
+        if term.get("op") == "br":
+            term["args"] = ["v999" if x == old_id else x for x in term["args"]]
+
+    try:
+        verify_lir(lir)
+    except VerificationError as exc:
+        assert "dense v0..vN" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_lir_v014_contracts_and_invariants_are_lowered_to_guards():
+    lir = lower_program(invariant_program(value=3))
+    verify_lir(lir)
+    ops = list(_all_lir_ops(lir))
+    assert any(op.get("op") == "guard" for op in ops)
+    assert not any(op.get("op") == "invariant.check" for op in ops)
+
+
+
+def test_lir_parameter_alpha_renaming_is_normalized():
+    first = functions_if_program()
+    second = functions_if_program()
+    choose = second["functions"][0]
+    choose["params"] = [
+        {"name": "condition", "type": "bool"},
+        {"name": "left", "type": "i64"},
+        {"name": "right", "type": "i64"},
+    ]
+    choose["body"][0]["cond"] = "condition"
+    choose["body"][0]["then"][0]["value"] = "left"
+    choose["body"][0]["else"][0]["value"] = "right"
+
+    assert lower_program(first) == lower_program(second)
+
+
+def test_lir_verifier_recomputes_transitive_effects():
+    lir = lower_program(effectful_program())
+    main = next(fn for fn in lir["functions"] if fn["name"] == "main")
+    main["effects"] = []
+
+    try:
+        verify_lir(lir)
+    except VerificationError as exc:
+        assert "do not match inferred effects ['console.write']" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_lir_verifier_recomputes_module_capabilities():
+    lir = lower_program(effectful_program())
+    lir["runtime"]["capabilities"] = []
+
+    try:
+        verify_lir(lir)
+    except VerificationError as exc:
+        assert "capabilities must exactly match inferred function effects" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_lir_verifier_rejects_noncanonical_legacy_limits():
+    lir = lower_program(sample_program("0.0.1"))
+    lir["runtime"]["limits"]["steps"] = 0
+
+    try:
+        verify_lir(lir)
+    except VerificationError as exc:
+        assert "must be null before source APL 0.0.10" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_lir_verifier_rejects_spoofed_feature_version():
+    lir = lower_program(sample_program("0.0.1"))
+    main = lir["functions"][0]
+    arithmetic = next(
+        op for op in main["blocks"][0]["ops"]
+        if op.get("op") == "i64.add"
+    )
+    arithmetic["op"] = "i64.div"
+
+    try:
+        verify_lir(lir)
+    except VerificationError as exc:
+        assert "i64.div requires source APL 0.0.3+" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_lir_verifier_rejects_unknown_guard_semantics():
+    lir = lower_program(invariant_program(value=3))
+    guard = next(
+        op
+        for fn in lir["functions"]
+        for block in fn["blocks"]
+        for op in block["ops"]
+        if op.get("op") == "guard"
+    )
+    guard["code"] = "app.fake_guard"
+
+    try:
+        verify_lir(lir)
+    except VerificationError as exc:
+        assert "unsupported normalized guard code" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+
+def test_lir_verifier_preserves_explicit_trap_namespace_rules():
+    lir = lower_program(explicit_trap_program())
+    trap_term = next(
+        block["term"]
+        for fn in lir["functions"]
+        for block in fn["blocks"]
+        if block["term"].get("op") == "trap"
+    )
+    trap_term["code"] = "apl.fake"
+
+    try:
+        verify_lir(lir)
+    except VerificationError as exc:
+        assert "namespace 'apl.*' is reserved" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")

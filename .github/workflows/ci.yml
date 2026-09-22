@@ -46,6 +46,28 @@ jobs:
           apl verify examples/quantities.apl
           apl verify examples/invariants.apl
           apl verify examples/invariants_fail.apl
+      - name: Lower and verify normalized compiler LIR
+        run: |
+          for example in \
+            hello \
+            functions_if \
+            arithmetic \
+            repeat_factorial \
+            arrays \
+            records \
+            trap \
+            effects \
+            host_io \
+            limits \
+            contracts \
+            ranges \
+            quantities \
+            invariants
+          do
+            apl lower "examples/$example.apl" > "/tmp/$example.lir.json"
+            apl verify-lir "/tmp/$example.lir.json"
+          done
+          test -n "$(apl lower-hash examples/invariants.apl)"
       - name: Run successful examples
         run: |
           output="$(apl run examples/hello.apl)"
