@@ -95,6 +95,7 @@ def main() -> int:
 
     seen: set[str] = set()
     plan: list[dict[str, Any]] = []
+    optimization_changes = 0
 
     with tempfile.TemporaryDirectory(prefix="apl-differential-") as tmp:
         temp = Path(tmp)
@@ -117,6 +118,8 @@ def main() -> int:
 
             lowered = lower_program(program)
             optimized = optimize_lir(lowered)
+            if optimized != lowered:
+                optimization_changes += 1
 
             baseline_path = temp / f"{case_id}.baseline.wasm"
             optimized_path = temp / f"{case_id}.optimized.wasm"
@@ -137,6 +140,9 @@ def main() -> int:
                 "expected": expected,
             })
 
+        if optimization_changes == 0:
+            raise RuntimeError("differential corpus did not exercise any optimizer transformation")
+
         plan_path = temp / "plan.json"
         plan_path.write_text(
             json.dumps(plan, ensure_ascii=False, sort_keys=True),
@@ -156,7 +162,10 @@ def main() -> int:
         if proc.returncode != 0:
             return proc.returncode
 
-    print(f"differential conformance passed: {len(plan)} cases x baseline/optimized WASM")
+    print(
+        f"differential conformance passed: {len(plan)} cases x baseline/optimized WASM; "
+        f"{optimization_changes} cases exercised optimizer transformations"
+    )
     return 0
 
 
