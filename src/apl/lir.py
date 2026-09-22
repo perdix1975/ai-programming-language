@@ -28,10 +28,6 @@ def _expect(condition: bool, message: str) -> None:
         _fail(message)
 
 
-def _type_key(value: tuple[str, Any]) -> Any:
-    return value[1]
-
-
 def _infer_effects(program: dict[str, Any]) -> dict[str, tuple[str, ...]]:
     functions = {fn["name"]: fn for fn in program["functions"]}
     memo: dict[str, tuple[str, ...]] = {}
@@ -100,7 +96,6 @@ class _FunctionLowerer:
         self.block_counter = 0
         self.blocks: list[_Block] = []
         self.current: _Block | None = None
-        self.value_types: dict[str, Any] = {}
         self.exit_block: _Block | None = None
         self.exit_env: dict[str, tuple[str, Any]] | None = None
         self.exit_result: tuple[str, Any] | None = None
@@ -115,7 +110,6 @@ class _FunctionLowerer:
     def _new_value(self, typ: Any) -> str:
         value_id = f"v{self.value_counter}"
         self.value_counter += 1
-        self.value_types[value_id] = typ
         return value_id
 
     def _new_block(
@@ -458,13 +452,11 @@ class _FunctionLowerer:
         )
 
         self._switch(body)
-        continuation = (header, header_env)
         self._lower_sequence(
             ins["body"],
             body_env,
             where_prefix=f"{where}.body",
             terminator="yield",
-            continuation=continuation,
             repeat_backedge=(
                 outer_env,
                 ins["index"],
@@ -1107,12 +1099,10 @@ def _verify_lir_function(
 
     block_params: dict[str, list[tuple[str, Any]]] = {}
     all_ids: set[str] = set()
-    fn_param_ids: list[str] = []
     for index, param in enumerate(fn["params"]):
         value_id = _check_id(param["id"], "v", f"{name}: param {index}")
         _expect(value_id not in all_ids, f"{name}: duplicate LIR value id '{value_id}'")
         all_ids.add(value_id)
-        fn_param_ids.append(value_id)
 
     for block in blocks:
         _expect(
@@ -1146,7 +1136,6 @@ def _verify_lir_function(
         f"{name}.b0: entry block must not have block parameters",
     )
 
-    target_map = {block["id"]: block for block in blocks}
     function_param_types = {
         param["id"]: param["type"]
         for param in fn["params"]
@@ -1180,7 +1169,6 @@ def _verify_lir_function(
             block["term"],
             available,
             block_params,
-            target_map,
             source_apl,
             fn["returns"],
             f"{name}.{block['id']}.term",
@@ -1495,7 +1483,6 @@ def _verify_lir_term(
     term: Any,
     available: dict[str, Any],
     block_params: dict[str, list[tuple[str, Any]]],
-    target_map: dict[str, Any],
     source_apl: str,
     return_type: Any,
     where: str,
