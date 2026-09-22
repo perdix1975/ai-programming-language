@@ -7,7 +7,15 @@ from typing import Any
 from . import SUPPORTED_LANGUAGE_VERSIONS
 from .contracts import verify_function_contracts
 from .errors import VerificationError
-from .quantities import (\n    MAX_UNIT_EXPONENT,\n    MAX_UNIT_TERMS,\n    UNIT_SYMBOL_RE,\n    combine_quantity_types,\n    is_quantity_type,\n)\nfrom .ranges import I64_MAX, I64_MIN, is_range_type\nfrom .resources import RESOURCE_LIMIT_MAXIMA
+from .quantities import (
+    MAX_UNIT_EXPONENT,
+    MAX_UNIT_TERMS,
+    UNIT_SYMBOL_RE,
+    combine_quantity_types,
+    is_quantity_type,
+)
+from .ranges import I64_MAX, I64_MIN, is_range_type
+from .resources import RESOURCE_LIMIT_MAXIMA
 
 SUPPORTED_TYPES = {"i64", "bool", "string", "unit"}
 VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4, "0.0.5": 5, "0.0.6": 6, "0.0.7": 7, "0.0.8": 8, "0.0.9": 9, "0.0.10": 10, "0.0.11": 11, "0.0.12": 12, "0.0.13": 13}
