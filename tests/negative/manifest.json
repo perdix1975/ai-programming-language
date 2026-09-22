@@ -262,5 +262,35 @@
     "contains": [
       "unknown invariant 'positive'"
     ]
+  },
+  {
+    "file": "v014_primitive_gate.apl",
+    "contains": [
+      "semantic primitive declarations require APL 0.0.15"
+    ]
+  },
+  {
+    "file": "v015_missing_primitives.apl",
+    "contains": [
+      "primitives must be a list"
+    ]
+  },
+  {
+    "file": "v015_bad_primitive_id.apl",
+    "contains": [
+      "primitive id does not match canonical semantic content"
+    ]
+  },
+  {
+    "file": "v015_unknown_primitive_call.apl",
+    "contains": [
+      "unknown semantic primitive"
+    ]
+  },
+  {
+    "file": "v015_primitive_body_call.apl",
+    "contains": [
+      "semantic primitive bodies cannot call functions or primitives"
+    ]
   }
 ]
