@@ -2005,3 +2005,340 @@ def test_pre_v011_rejects_contract_fields():
         assert "function contracts require APL 0.0.11" in str(exc)
     else:
         raise AssertionError("expected VerificationError")
+
+
+
+def range_type(minimum=0, maximum=100):
+    return {"range": {"min": minimum, "max": maximum}}
+
+
+def range_program(value=42, minimum=0, maximum=100):
+    bounded = range_type(minimum, maximum)
+    return {
+        "apl": "0.0.12",
+        "module": "ranges",
+        "capabilities": [],
+        "limits": {"steps": 50, "output_lines": 0, "host_reads": 0},
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "effects": [],
+            "requires": [],
+            "ensures": [],
+            "body": [
+                {"op": "const", "id": "raw", "type": "i64", "value": value},
+                {
+                    "op": "range.check",
+                    "id": "bounded",
+                    "type": bounded,
+                    "args": ["raw"],
+                },
+                {
+                    "op": "range.value",
+                    "id": "wide",
+                    "type": "i64",
+                    "args": ["bounded"],
+                },
+                {"op": "return", "value": "wide"},
+            ],
+        }],
+    }
+
+
+def test_v012_range_check_and_explicit_widening():
+    p = range_program()
+    verify_program(p)
+    result = run_program(p, output=lambda _: None)
+    assert result.value == 42
+    assert result.type == "i64"
+
+
+def test_v012_range_violation_has_stable_trap():
+    p = range_program(value=101)
+    try:
+        run_program(p, output=lambda _: None)
+    except ExecutionError as exc:
+        assert exc.code == "apl.range_violation"
+        assert exc.where == "main[1]"
+        assert "outside range [0, 100]" in exc.message
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_range_descriptor_requires_valid_i64_bounds():
+    invalid = [
+        range_type(5, 4),
+        range_type(-(2**63) - 1, 0),
+        range_type(0, 2**63),
+        {"range": {"min": 0}},
+        {"range": {"min": False, "max": 1}},
+    ]
+    fragments = [
+        "range min must not exceed max",
+        "range min must be within i64 bounds",
+        "range max must be within i64 bounds",
+        "range descriptor must contain exactly 'min' and 'max'",
+        "range min must be an i64 integer literal",
+    ]
+    for typ, fragment in zip(invalid, fragments):
+        p = range_program()
+        p["functions"][0]["body"][1]["type"] = typ
+        try:
+            verify_program(p)
+        except VerificationError as exc:
+            assert fragment in str(exc)
+        else:
+            raise AssertionError(f"expected VerificationError for {typ!r}")
+
+
+def test_v011_rejects_range_types():
+    p = contract_program()
+    p["apl"] = "0.0.11"
+    p["functions"][0]["params"][0]["type"] = range_type()
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "range types require APL 0.0.12" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_range_check_requires_plain_i64_source():
+    p = range_program()
+    bounded = range_type()
+    p["functions"][0]["body"].insert(
+        2,
+        {
+            "op": "range.check",
+            "id": "again",
+            "type": bounded,
+            "args": ["bounded"],
+        },
+    )
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "range.check source must have type 'i64'" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_range_value_requires_range_source():
+    p = range_program()
+    p["functions"][0]["body"][2]["args"] = ["raw"]
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "range.value source must be a range" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_range_values_do_not_implicitly_participate_in_i64_arithmetic():
+    p = range_program()
+    p["functions"][0]["body"].insert(
+        2,
+        {
+            "op": "add",
+            "id": "sum",
+            "type": "i64",
+            "args": ["bounded", "bounded"],
+        },
+    )
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "arithmetic requires i64 operands" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_range_type_is_exact_in_function_signatures():
+    bounded = range_type(1, 10)
+    p = {
+        "apl": "0.0.12",
+        "module": "range_call",
+        "capabilities": [],
+        "limits": {"steps": 100, "output_lines": 0, "host_reads": 0},
+        "entry": "main",
+        "functions": [
+            {
+                "name": "identity",
+                "params": [{"name": "x", "type": bounded}],
+                "returns": bounded,
+                "effects": [],
+                "requires": [],
+                "ensures": [],
+                "body": [{"op": "return", "value": "x"}],
+            },
+            {
+                "name": "main",
+                "params": [],
+                "returns": "i64",
+                "effects": [],
+                "requires": [],
+                "ensures": [],
+                "body": [
+                    {"op": "const", "id": "raw", "type": "i64", "value": 7},
+                    {
+                        "op": "range.check",
+                        "id": "bounded",
+                        "type": bounded,
+                        "args": ["raw"],
+                    },
+                    {
+                        "op": "call",
+                        "id": "same",
+                        "type": bounded,
+                        "function": "identity",
+                        "args": ["bounded"],
+                    },
+                    {
+                        "op": "range.value",
+                        "id": "wide",
+                        "type": "i64",
+                        "args": ["same"],
+                    },
+                    {"op": "return", "value": "wide"},
+                ],
+            },
+        ],
+    }
+    verify_program(p)
+    assert run_program(p, output=lambda _: None).value == 7
+
+    p["functions"][0]["params"][0]["type"] = range_type(0, 10)
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "call arg 0 expects" in str(exc)
+    else:
+        raise AssertionError("range types are structural and exact")
+
+
+def test_ranges_can_be_array_elements():
+    bounded = range_type(0, 9)
+    array_t = {"array": bounded, "len": 2}
+    p = {
+        "apl": "0.0.12",
+        "module": "range_array",
+        "capabilities": [],
+        "limits": {"steps": 100, "output_lines": 0, "host_reads": 0},
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "effects": [],
+            "requires": [],
+            "ensures": [],
+            "body": [
+                {"op": "const", "id": "a_raw", "type": "i64", "value": 2},
+                {"op": "const", "id": "b_raw", "type": "i64", "value": 7},
+                {"op": "range.check", "id": "a", "type": bounded, "args": ["a_raw"]},
+                {"op": "range.check", "id": "b", "type": bounded, "args": ["b_raw"]},
+                {"op": "array", "id": "items", "type": array_t, "args": ["a", "b"]},
+                {"op": "const", "id": "index", "type": "i64", "value": 1},
+                {"op": "array.get", "id": "picked", "type": bounded, "args": ["items", "index"]},
+                {"op": "range.value", "id": "wide", "type": "i64", "args": ["picked"]},
+                {"op": "return", "value": "wide"},
+            ],
+        }],
+    }
+    verify_program(p)
+    assert run_program(p, output=lambda _: None).value == 7
+
+
+def test_contract_ordered_comparison_accepts_identical_range_types():
+    bounded = range_type(0, 10)
+    p = {
+        "apl": "0.0.12",
+        "module": "range_contract",
+        "capabilities": [],
+        "limits": {"steps": 100, "output_lines": 0, "host_reads": 0},
+        "entry": "main",
+        "functions": [
+            {
+                "name": "ordered",
+                "params": [
+                    {"name": "low", "type": bounded},
+                    {"name": "high", "type": bounded},
+                ],
+                "returns": bounded,
+                "effects": [],
+                "requires": [
+                    contract_clause(
+                        "ordered",
+                        "low must not exceed high",
+                        predicate("le", var("low"), var("high")),
+                    )
+                ],
+                "ensures": [],
+                "body": [{"op": "return", "value": "high"}],
+            },
+            {
+                "name": "main",
+                "params": [],
+                "returns": "i64",
+                "effects": [],
+                "requires": [],
+                "ensures": [],
+                "body": [
+                    {"op": "const", "id": "a0", "type": "i64", "value": 2},
+                    {"op": "const", "id": "b0", "type": "i64", "value": 8},
+                    {"op": "range.check", "id": "a", "type": bounded, "args": ["a0"]},
+                    {"op": "range.check", "id": "b", "type": bounded, "args": ["b0"]},
+                    {
+                        "op": "call",
+                        "id": "answer",
+                        "type": bounded,
+                        "function": "ordered",
+                        "args": ["a", "b"],
+                    },
+                    {"op": "range.value", "id": "wide", "type": "i64", "args": ["answer"]},
+                    {"op": "return", "value": "wide"},
+                ],
+            },
+        ],
+    }
+    verify_program(p)
+    assert run_program(p, output=lambda _: None).value == 8
+
+
+def test_contract_ordered_comparison_rejects_range_vs_i64():
+    p = range_program()
+    bounded = range_type()
+    p["functions"][0]["requires"] = [
+        contract_clause(
+            "mixed",
+            "no implicit widening",
+            predicate("le", contract_const("i64", 0), contract_const("i64", 1)),
+        )
+    ]
+    # Replace one literal with a range-typed parameter via a dedicated function.
+    p["functions"].insert(
+        0,
+        {
+            "name": "mixed",
+            "params": [{"name": "x", "type": bounded}],
+            "returns": bounded,
+            "effects": [],
+            "requires": [
+                contract_clause(
+                    "mixed_types",
+                    "range and i64 must not compare implicitly",
+                    predicate("le", var("x"), contract_const("i64", 10)),
+                )
+            ],
+            "ensures": [],
+            "body": [{"op": "return", "value": "x"}],
+        },
+    )
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "requires identical i64 or range args" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
