@@ -3872,7 +3872,7 @@ def test_v015_primitive_call_uses_core_signature_type_and_arity_checks():
     try:
         verify_program(program)
     except VerificationError as exc:
-        assert "call result type must be 'i64'" in str(exc)
+        assert "declared type 'bool' does not match inferred 'i64'" in str(exc)
     else:
         raise AssertionError("expected VerificationError")
 
