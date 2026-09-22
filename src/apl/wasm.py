@@ -23,6 +23,7 @@ TRAP_PRECONDITION_FAILED = 6
 TRAP_POSTCONDITION_FAILED = 7
 TRAP_INVARIANT_FAILED = 8
 TRAP_RANGE_VIOLATION = 9
+TRAP_ARRAY_INDEX_OOB = 10
 
 CAPABILITY_BITS = {
     "console.write": 1,
@@ -81,6 +82,22 @@ def _packed_string_handle(pointer: int, length: int) -> int:
     return raw if raw < 2**63 else raw - 2**64
 
 
+def _is_array_type(typ: Any) -> bool:
+    return isinstance(typ, dict) and set(typ) == {"array", "len"}
+
+
+def _is_record_type(typ: Any) -> bool:
+    return isinstance(typ, dict) and set(typ) == {"record"}
+
+
+def _is_i64_slot_type(typ: Any) -> bool:
+    return (
+        typ in {"i64", "string"}
+        or is_range_type(typ)
+        or is_quantity_type(typ)
+    )
+
+
 def _value_type(typ: Any) -> int:
     if typ == "i64" or is_range_type(typ) or is_quantity_type(typ):
         return WASM_I64
@@ -88,9 +105,11 @@ def _value_type(typ: Any) -> int:
         return WASM_I32
     if typ == "string":
         return WASM_I64
+    if _is_array_type(typ) or _is_record_type(typ):
+        return WASM_I32
     raise CompilationError(
-        "WASM backend supports scalar i64/bool/string/range/quantity values, "
-        f"got {typ!r}"
+        "WASM backend does not support this value type yet: "
+        f"{typ!r}"
     )
 
 
@@ -192,6 +211,24 @@ class _FunctionCompiler:
         a, b = op["args"]
         dest = self._index(op["id"])
         return self._arg(a) + self._arg(b) + _op(opcode) + _local_set(dest)
+
+    def _store_slot(self, value_id: str, *, offset: int = 0) -> bytes:
+        typ = self.types[value_id]
+        value = self._arg(value_id)
+        if not _is_i64_slot_type(typ):
+            value += _op(0xAD)  # i64.extend_i32_u
+        return value + _op(0x37, _u32(3), _u32(offset))
+
+    def _load_slot(
+        self,
+        typ: Any,
+        *,
+        offset: int = 0,
+    ) -> bytes:
+        code = _op(0x29, _u32(3), _u32(offset))  # i64.load
+        if not _is_i64_slot_type(typ):
+            code += _op(0xA7)  # i32.wrap_i64
+        return code
 
     def _consume_resource(self, resource: str) -> bytes:
         index = self.budget_global_indices.get(resource)
@@ -477,9 +514,17 @@ class _FunctionCompiler:
         if name in {"i64.lt", "i64.le", "i64.gt", "i64.ge"}:
             return self._comparison(op)
         if name in {"value.eq", "value.lt", "value.le", "value.gt", "value.ge"}:
+            comparison_type = self.types[op["args"][0]]
             if (
                 name == "value.eq"
-                and self.types[op["args"][0]] == "string"
+                and (_is_array_type(comparison_type) or _is_record_type(comparison_type))
+            ):
+                raise CompilationError(
+                    "WASM structural array/record equality is not implemented yet"
+                )
+            if (
+                name == "value.eq"
+                and comparison_type == "string"
             ):
                 a, b = op["args"]
                 return (
@@ -518,6 +563,75 @@ class _FunctionCompiler:
                 self._consume_resource("host_reads")
                 + self._arg(op["arg"])
                 + _call(self.import_indices[import_name])
+                + _local_set(self._index(op["id"]))
+            )
+
+        if name == "array.make":
+            dest = self._index(op["id"])
+            size = op["type"]["len"] * 8
+            code = (
+                _op(0x41, _sleb(size, 32))
+                + _call(self.import_indices["alloc"])
+                + _local_set(dest)
+            )
+            for index, source in enumerate(op["args"]):
+                code += self._arg(op["id"])
+                code += self._store_slot(source, offset=index * 8)
+            return code
+
+        if name == "array.get":
+            array_id, index_id = op["args"]
+            length = self.types[array_id]["len"]
+            negative = (
+                self._arg(index_id)
+                + _op(0x42, _sleb(0, 64), 0x53)
+            )
+            too_high = (
+                self._arg(index_id)
+                + _op(0x42, _sleb(length, 64), 0x59)
+            )
+            address = (
+                self._arg(array_id)
+                + self._arg(index_id)
+                + _op(0xA7)
+                + _op(0x41, _sleb(8, 32), 0x6C, 0x6A)
+            )
+            return (
+                _guard_if(negative, _trap(TRAP_ARRAY_INDEX_OOB))
+                + _guard_if(too_high, _trap(TRAP_ARRAY_INDEX_OOB))
+                + address
+                + self._load_slot(op["type"])
+                + _local_set(self._index(op["id"]))
+            )
+
+        if name == "array.len":
+            source_type = self.types[op["arg"]]
+            return (
+                _op(0x42, _sleb(source_type["len"], 64))
+                + _local_set(self._index(op["id"]))
+            )
+
+        if name == "record.make":
+            dest = self._index(op["id"])
+            fields = sorted(op["type"]["record"])
+            code = (
+                _op(0x41, _sleb(len(fields) * 8, 32))
+                + _call(self.import_indices["alloc"])
+                + _local_set(dest)
+            )
+            for index, field in enumerate(fields):
+                source = op["fields"][field]
+                code += self._arg(op["id"])
+                code += self._store_slot(source, offset=index * 8)
+            return code
+
+        if name == "record.get":
+            record_type = self.types[op["record"]]
+            fields = sorted(record_type["record"])
+            offset = fields.index(op["field"]) * 8
+            return (
+                self._arg(op["record"])
+                + self._load_slot(op["type"], offset=offset)
                 + _local_set(self._index(op["id"]))
             )
 
