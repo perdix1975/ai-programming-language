@@ -576,8 +576,11 @@ class _FunctionCompiler:
                 if name == "host.fs.read_text"
                 else "net_get_text"
             )
+            host_kind = 1 if name == "host.fs.read_text" else 2
             return (
-                self._consume_resource("host_reads")
+                _op(0x41, _sleb(host_kind, 32))
+                + _call(self.import_indices["require_host"])
+                + self._consume_resource("host_reads")
                 + self._arg(op["arg"])
                 + _call(self.import_indices[import_name])
                 + _local_set(self._index(op["id"]))
@@ -1042,6 +1045,8 @@ def compile_lir_to_wasm(lir: dict[str, Any]) -> WasmArtifact:
             import_specs.append((import_name, [typ], "unit"))
     if needs_fs:
         import_specs.append(("fs_read_text", ["string"], "string"))
+    if needs_fs or needs_net:
+        import_specs.append(("require_host", ["bool"], "unit"))
     if needs_net:
         import_specs.append(("net_get_text", ["string"], "string"))
 
