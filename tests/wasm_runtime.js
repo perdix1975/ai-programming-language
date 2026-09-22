@@ -87,6 +87,93 @@ async function instantiateAplWasm(path, options = {}) {
     }
   }
 
+  function readSlot(pointer, offset) {
+    if (!state.memory) {
+      throw new Error("APL WASM memory is not available");
+    }
+    const view = new DataView(state.memory.buffer);
+    return view.getBigUint64(pointer + offset, true);
+  }
+
+  function slotPointer(slot) {
+    return Number(slot & 0xffffffffn) >>> 0;
+  }
+
+  function slotSignedI64(slot) {
+    return BigInt.asIntN(64, slot);
+  }
+
+  function compareSlot(type, leftSlot, rightSlot) {
+    if (type === "i64") {
+      return slotSignedI64(leftSlot) === slotSignedI64(rightSlot);
+    }
+    if (type === "bool") {
+      return Number(leftSlot & 0xffffffffn) === Number(rightSlot & 0xffffffffn);
+    }
+    if (type === "string") {
+      return (
+        decodeString(slotSignedI64(leftSlot))
+        === decodeString(slotSignedI64(rightSlot))
+      );
+    }
+    if (type && typeof type === "object") {
+      if ("array" in type && "len" in type) {
+        return structuralEqual(
+          type,
+          slotPointer(leftSlot),
+          slotPointer(rightSlot)
+        );
+      }
+      if ("record" in type) {
+        return structuralEqual(
+          type,
+          slotPointer(leftSlot),
+          slotPointer(rightSlot)
+        );
+      }
+      if ("range" in type || "quantity" in type) {
+        return slotSignedI64(leftSlot) === slotSignedI64(rightSlot);
+      }
+    }
+    throw new Error(`unsupported structural comparison type: ${JSON.stringify(type)}`);
+  }
+
+  function structuralEqual(type, leftPointer, rightPointer) {
+    if (type && typeof type === "object" && "array" in type && "len" in type) {
+      for (let index = 0; index < type.len; index += 1) {
+        if (
+          !compareSlot(
+            type.array,
+            readSlot(leftPointer, index * 8),
+            readSlot(rightPointer, index * 8)
+          )
+        ) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    if (type && typeof type === "object" && "record" in type) {
+      const fields = Object.keys(type.record).sort();
+      for (let index = 0; index < fields.length; index += 1) {
+        const field = fields[index];
+        if (
+          !compareSlot(
+            type.record[field],
+            readSlot(leftPointer, index * 8),
+            readSlot(rightPointer, index * 8)
+          )
+        ) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    throw new Error(`struct_eq requires array/record descriptor, got ${JSON.stringify(type)}`);
+  }
+
   const imports = {
     apl: {
       trap(code) {
@@ -106,6 +193,14 @@ async function instantiateAplWasm(path, options = {}) {
       },
       string_eq(left, right) {
         return decodeString(left) === decodeString(right) ? 1 : 0;
+      },
+      struct_eq(descriptorHandle, leftPointer, rightPointer) {
+        const descriptor = JSON.parse(decodeString(descriptorHandle));
+        return structuralEqual(
+          descriptor,
+          leftPointer >>> 0,
+          rightPointer >>> 0
+        ) ? 1 : 0;
       },
       application_trap(codeHandle, messageHandle, whereHandle) {
         const error = new Error(
