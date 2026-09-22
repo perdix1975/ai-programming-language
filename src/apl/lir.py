@@ -8,6 +8,7 @@ from .canonical import semantic_hash
 from .errors import VerificationError
 from .quantities import combine_quantity_types, is_quantity_type
 from .ranges import is_range_type
+from .resources import RESOURCE_LIMIT_MAXIMA
 from .verify import _validate_type, verify_program
 
 
@@ -869,6 +870,77 @@ def _check_id(value: Any, prefix: str, where: str) -> str:
     return value
 
 
+LIR_EFFECTS = {"console.write", "fs.read_text", "net.get_text"}
+
+
+def _lir_direct_effects_and_calls(
+    fn: dict[str, Any],
+) -> tuple[set[str], set[str]]:
+    effects: set[str] = set()
+    calls: set[str] = set()
+    for block in fn["blocks"]:
+        for op in block["ops"]:
+            name = op.get("op")
+            if name == "console.write":
+                effects.add("console.write")
+            elif name == "host.fs.read_text":
+                effects.add("fs.read_text")
+            elif name == "host.net.get_text":
+                effects.add("net.get_text")
+            elif name == "call":
+                calls.add(op["function"])
+    return effects, calls
+
+
+def _infer_lir_effects(
+    functions: list[dict[str, Any]],
+) -> dict[str, tuple[str, ...]]:
+    direct: dict[str, set[str]] = {}
+    calls: dict[str, set[str]] = {}
+    for fn in functions:
+        fn_direct, fn_calls = _lir_direct_effects_and_calls(fn)
+        direct[fn["name"]] = fn_direct
+        calls[fn["name"]] = fn_calls
+
+    state: dict[str, int] = {}
+    memo: dict[str, tuple[str, ...]] = {}
+
+    def visit(name: str) -> tuple[str, ...]:
+        status = state.get(name, 0)
+        _expect(status != 1, f"LIR call graph contains a cycle at '{name}'")
+        if status == 2:
+            return memo[name]
+        state[name] = 1
+        effects = set(direct[name])
+        for target in sorted(calls[name]):
+            _expect(
+                target in direct,
+                f"{name}: LIR call target '{target}' does not exist",
+            )
+            effects.update(visit(target))
+        result = tuple(sorted(effects))
+        state[name] = 2
+        memo[name] = result
+        return result
+
+    for fn in functions:
+        visit(fn["name"])
+    return memo
+
+
+def _require_source_version(
+    source_apl: str,
+    target: tuple[int, int, int],
+    where: str,
+    feature: str,
+) -> None:
+    _expect(
+        _version_at_least(source_apl, target),
+        f"{where}: {feature} requires source APL "
+        f"{target[0]}.{target[1]}.{target[2]}+",
+    )
+
+
 def verify_lir(lir: Any) -> None:
     """Verify normalized APL LIR independently of the source program."""
     _expect(isinstance(lir, dict), "LIR root must be an object")
@@ -912,6 +984,11 @@ def verify_lir(lir: Any) -> None:
         isinstance(runtime["capability_grants_required"], bool),
         "LIR capability_grants_required must be bool",
     )
+    expected_grants = _version_at_least(source_apl, (0, 0, 8))
+    _expect(
+        runtime["capability_grants_required"] is expected_grants,
+        "LIR capability_grants_required does not match source APL version",
+    )
     capabilities = runtime["capabilities"]
     _expect(
         isinstance(capabilities, list)
@@ -925,11 +1002,20 @@ def verify_lir(lir: Any) -> None:
         and set(limits) == {"steps", "output_lines", "host_reads"},
         "LIR limits must contain exactly steps, output_lines, and host_reads",
     )
+    has_source_limits = _version_at_least(source_apl, (0, 0, 10))
     for name, value in limits.items():
-        _expect(
-            value is None or (isinstance(value, int) and not isinstance(value, bool) and value >= 0),
-            f"LIR limit {name} must be a non-negative integer or null",
-        )
+        if has_source_limits:
+            _expect(
+                isinstance(value, int)
+                and not isinstance(value, bool)
+                and 0 <= value <= RESOURCE_LIMIT_MAXIMA[name],
+                f"LIR limit {name} must be in [0, {RESOURCE_LIMIT_MAXIMA[name]}]",
+            )
+        else:
+            _expect(
+                value is None,
+                f"LIR limit {name} must be null before source APL 0.0.10",
+            )
 
     functions = lir.get("functions")
     _expect(
@@ -963,6 +1049,28 @@ def verify_lir(lir: Any) -> None:
     for fn in functions:
         _verify_lir_function(fn, source_apl, signatures)
 
+    inferred_effects = _infer_lir_effects(functions)
+    for fn in functions:
+        expected = list(inferred_effects[fn["name"]])
+        _expect(
+            fn["effects"] == expected,
+            f"{fn['name']}: LIR effects {fn['effects']} do not match "
+            f"inferred effects {expected}",
+        )
+
+    expected_capabilities = sorted(
+        {
+            effect
+            for effects in inferred_effects.values()
+            for effect in effects
+        }
+    )
+    _expect(
+        capabilities == expected_capabilities,
+        "LIR capabilities must exactly match inferred function effects: "
+        f"expected {expected_capabilities}, got {capabilities}",
+    )
+
 
 def _verify_lir_function(
     fn: dict[str, Any],
@@ -980,6 +1088,10 @@ def _verify_lir_function(
         and effects == sorted(set(effects))
         and all(isinstance(item, str) for item in effects),
         f"{name}: LIR effects must be a sorted unique string list",
+    )
+    _expect(
+        all(effect in LIR_EFFECTS for effect in effects),
+        f"{name}: LIR effects contain an unsupported effect",
     )
     blocks = fn["blocks"]
     _expect(
