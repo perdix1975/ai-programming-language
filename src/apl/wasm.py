@@ -700,86 +700,257 @@ class _FunctionCompiler:
         return _u32(len(body)) + body
 
 
+def _function_value_types(fn: dict[str, Any]) -> dict[str, Any]:
+    types = {param["id"]: param["type"] for param in fn["params"]}
+    for block in fn["blocks"]:
+        for param in block["params"]:
+            types[param["id"]] = param["type"]
+        for op in block["ops"]:
+            if "id" in op:
+                types[op["id"]] = op["type"]
+    return types
+
+
+def _collect_runtime_needs(
+    lir: dict[str, Any],
+) -> tuple[set[str], set[str], bool, bool, bool]:
+    string_constants: set[str] = set()
+    console_types: set[str] = set()
+    needs_string_eq = False
+    needs_fs = False
+    needs_net = False
+
+    for fn in lir["functions"]:
+        types = _function_value_types(fn)
+        for block in fn["blocks"]:
+            for op in block["ops"]:
+                name = op["op"]
+                if name == "const" and op.get("type") == "string":
+                    string_constants.add(op["value"])
+                elif name == "value.eq" and types[op["args"][0]] == "string":
+                    needs_string_eq = True
+                elif name == "console.write":
+                    console_types.add(types[op["arg"]])
+                elif name == "host.fs.read_text":
+                    needs_fs = True
+                elif name == "host.net.get_text":
+                    needs_net = True
+
+    return (
+        string_constants,
+        console_types,
+        needs_string_eq,
+        needs_fs,
+        needs_net,
+    )
+
+
+def _build_string_pool(
+    values: set[str],
+) -> tuple[dict[str, int], list[tuple[int, bytes]], int]:
+    handles: dict[str, int] = {}
+    segments: list[tuple[int, bytes]] = []
+    offset = 0
+
+    for value in sorted(values):
+        encoded = value.encode("utf-8")
+        handles[value] = _packed_string_handle(offset, len(encoded))
+        if encoded:
+            segments.append((offset, encoded))
+            offset += len(encoded)
+
+    if offset > 0x7FFFFFFF:
+        raise CompilationError("WASM static UTF-8 string data exceeds i32 memory ABI")
+    return handles, segments, offset
+
+
 def compile_lir_to_wasm(lir: dict[str, Any]) -> WasmArtifact:
     verify_lir(lir)
 
     runtime = lir["runtime"]
-    if runtime["capabilities"]:
-        raise CompilationError(
-            "WASM scalar backend does not support host capabilities yet"
-        )
-    step_limit = runtime["limits"]["steps"]
-    step_global_index = 0 if step_limit is not None else None
-
     functions = lir["functions"]
     signatures = {
         fn["name"]: ([param["type"] for param in fn["params"]], fn["returns"])
         for fn in functions
     }
 
-    # Function index 0 is reserved for the imported apl.trap function.
-    function_indices = {
-        fn["name"]: index + 1
-        for index, fn in enumerate(functions)
+    (
+        string_constants,
+        console_types,
+        needs_string_eq,
+        needs_fs,
+        needs_net,
+    ) = _collect_runtime_needs(lir)
+    string_handles, string_segments, static_end = _build_string_pool(
+        string_constants
+    )
+
+    needs_memory = bool(string_constants) or needs_fs or needs_net or any(
+        fn["returns"] == "string"
+        or any(param["type"] == "string" for param in fn["params"])
+        or any(
+            param["type"] == "string"
+            for block in fn["blocks"]
+            for param in block["params"]
+        )
+        or any(
+            op.get("type") == "string"
+            for block in fn["blocks"]
+            for op in block["ops"]
+            if "type" in op
+        )
+        for fn in functions
+    )
+
+    capabilities = runtime["capabilities"]
+    capability_mask = 0
+    for capability in capabilities:
+        try:
+            capability_mask |= CAPABILITY_BITS[capability]
+        except KeyError as exc:
+            raise CompilationError(
+                f"unsupported WASM capability {capability!r}"
+            ) from exc
+
+    import_specs: list[tuple[str, list[Any], Any]] = [
+        ("trap", ["bool"], "unit"),
+    ]
+    if capability_mask:
+        import_specs.append(("require_capabilities", ["bool"], "unit"))
+    if needs_string_eq:
+        import_specs.append(("string_eq", ["string", "string"], "bool"))
+    for typ, import_name in (
+        ("i64", "console_write_i64"),
+        ("bool", "console_write_bool"),
+        ("string", "console_write_string"),
+    ):
+        if typ in console_types:
+            import_specs.append((import_name, [typ], "unit"))
+    if needs_fs:
+        import_specs.append(("fs_read_text", ["string"], "string"))
+    if needs_net:
+        import_specs.append(("net_get_text", ["string"], "string"))
+
+    import_indices = {
+        name: index
+        for index, (name, _, _) in enumerate(import_specs)
     }
 
     type_entries = [
-        _function_type(["bool"], "unit"),
-        *[
-            _function_type(
-                [param["type"] for param in fn["params"]],
-                fn["returns"],
-            )
-            for fn in functions
-        ],
+        _function_type(params, result)
+        for _, params, result in import_specs
+    ] + [
+        _function_type(
+            [param["type"] for param in fn["params"]],
+            fn["returns"],
+        )
+        for fn in functions
     ]
     type_section = _section(1, _vec(type_entries))
 
-    import_entry = (
+    import_entries = [
         _name("apl")
-        + _name("trap")
+        + _name(name)
         + bytes([0x00])
-        + _u32(0)
-    )
-    import_section = _section(2, _vec([import_entry]))
+        + _u32(type_index)
+        for type_index, (name, _, _) in enumerate(import_specs)
+    ]
+    import_section = _section(2, _vec(import_entries))
 
+    import_count = len(import_specs)
+    function_indices = {
+        fn["name"]: import_count + index
+        for index, fn in enumerate(functions)
+    }
     function_section = _section(
         3,
-        _vec([_u32(index + 1) for index in range(len(functions))]),
+        _vec([
+            _u32(import_count + index)
+            for index in range(len(functions))
+        ]),
     )
+
+    memory_section = b""
+    if needs_memory:
+        minimum_pages = max(1, (max(static_end, 1) + 65535) // 65536)
+        memory_entry = bytes([0x00]) + _u32(minimum_pages)
+        memory_section = _section(5, _vec([memory_entry]))
+
+    global_entries: list[bytes] = []
+    budget_global_indices: dict[str, int] = {}
+    for resource in RESOURCE_ORDER:
+        limit = runtime["limits"][resource]
+        if limit is not None:
+            budget_global_indices[resource] = len(global_entries)
+            global_entries.append(
+                bytes([WASM_I64, 0x01])
+                + _op(0x42, _sleb(limit, 64), 0x0B)
+            )
+
+    static_end_global_index: int | None = None
+    if needs_memory:
+        static_end_global_index = len(global_entries)
+        global_entries.append(
+            bytes([WASM_I32, 0x00])
+            + _op(0x41, _sleb(static_end, 32), 0x0B)
+        )
+    global_section = _section(6, _vec(global_entries)) if global_entries else b""
 
     entry_name = lir["entry"]
     entry_index = function_indices[entry_name]
-    export_entry = _name("apl_entry") + bytes([0x00]) + _u32(entry_index)
-    export_section = _section(7, _vec([export_entry]))
-
-    global_section = b""
-    if step_limit is not None:
-        global_entry = (
-            bytes([WASM_I64, 0x01])
-            + _op(0x42, _sleb(step_limit, 64), 0x0B)
+    export_entries = [
+        _name("apl_entry") + bytes([0x00]) + _u32(entry_index)
+    ]
+    if needs_memory:
+        export_entries.append(
+            _name("memory") + bytes([0x02]) + _u32(0)
         )
-        global_section = _section(6, _vec([global_entry]))
+        if static_end_global_index is None:
+            raise RuntimeError("memory requires apl_static_end global")
+        export_entries.append(
+            _name("apl_static_end")
+            + bytes([0x03])
+            + _u32(static_end_global_index)
+        )
+    export_section = _section(7, _vec(export_entries))
 
     code_entries = [
         _FunctionCompiler(
             fn,
             function_indices=function_indices,
             signatures=signatures,
-            step_global_index=step_global_index,
+            import_indices=import_indices,
+            budget_global_indices=budget_global_indices,
+            string_handles=string_handles,
+            entry_capability_mask=(
+                capability_mask if fn["name"] == entry_name else 0
+            ),
         ).compile()
         for fn in functions
     ]
     code_section = _section(10, _vec(code_entries))
+
+    data_section = b""
+    if string_segments:
+        data_entries = [
+            bytes([0x00])
+            + _op(0x41, _sleb(offset, 32), 0x0B)
+            + _u32(len(data))
+            + data
+            for offset, data in string_segments
+        ]
+        data_section = _section(11, _vec(data_entries))
 
     binary = (
         WASM_MAGIC_VERSION
         + type_section
         + import_section
         + function_section
+        + memory_section
         + global_section
         + export_section
         + code_section
+        + data_section
     )
     return WasmArtifact(
         binary=binary,
