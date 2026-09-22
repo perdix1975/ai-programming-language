@@ -1,0 +1,23 @@
+{
+  "apl":"0.0.12",
+  "module":"v012_quantity_gate",
+  "capabilities":[],
+  "limits":{"steps":10,"output_lines":0,"host_reads":0},
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"i64",
+      "effects":[],
+      "requires":[],
+      "ensures":[],
+      "body":[
+        {"op":"const","id":"raw","type":"i64","value":1},
+        {"op":"quantity.attach","id":"q","type":{"quantity":{"m":1}},"args":["raw"]},
+        {"op":"quantity.value","id":"wide","type":"i64","args":["q"]},
+        {"op":"return","value":"wide"}
+      ]
+    }
+  ]
+}
