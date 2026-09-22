@@ -4,7 +4,7 @@ APL is an experimental programming language and execution architecture designed 
 
 The normative program is not optimized for human typing. It is an explicit typed semantic representation that AI systems can generate, verify, transform, optimize, explain, and compile.
 
-> Status: **pre-alpha / Draft 0.0.12**
+> Status: **pre-alpha / Draft 0.0.13**
 
 ## What exists now
 
@@ -27,6 +27,7 @@ The executable reference core includes:
 - deterministic `steps`, `output_lines`, and `host_reads` execution budgets with optional stricter host limits;
 - typed declarative function `requires`/`ensures` contracts with deterministic pre/postcondition traps;
 - structural bounded `i64` range types with explicit `range.check` refinement and `range.value` widening;
+- symbolic structural quantity types with static unit-exponent algebra and explicit attach/value conversions;
 - static rejection of direct and mutual recursion in Draft 0.0.2;
 - strict verifier;
 - deterministic canonical encoding and SHA-256 identity;
@@ -34,7 +35,7 @@ The executable reference core includes:
 - CLI;
 - conformance tests and CI on Python 3.11 and 3.13.
 
-APL 0.0.1–0.0.11 programs remain supported. Draft 0.0.12 adds structural bounded `i64` range types with explicit runtime refinement checks and no implicit conversions.
+APL 0.0.1–0.0.12 programs remain supported. Draft 0.0.13 adds symbolic integer quantity types with exact unit vectors, static multiplication/division algebra, and no implicit scaling or unit conversion.
 
 The Python implementation is a bootstrap reference implementation, not the planned high-performance runtime.
 
@@ -87,8 +88,11 @@ apl verify examples/ranges.apl
 apl run examples/ranges.apl
 apl run examples/ranges_fail.apl
 
-apl canonicalize examples/ranges.apl
-apl hash examples/ranges.apl
+apl verify examples/quantities.apl
+apl run examples/quantities.apl
+
+apl canonicalize examples/quantities.apl
+apl hash examples/quantities.apl
 ```
 
 ## Why the IR looks like this
@@ -122,7 +126,7 @@ APL semantic IR
     +--> optimizer --> WASM/native/accelerator backend
 ```
 
-M2 is complete and M3 now includes contracts plus bounded `i64` range refinements. The next work explores units/dimensions and reusable machine-checkable invariants.
+M2 is complete and M3 now includes contracts, bounded `i64` ranges, and symbolic quantity algebra. The next work is reusable machine-checkable invariants.
 
 ## License
 
