@@ -11,6 +11,7 @@ from .host import DeterministicHost
 from .interpreter import run_program
 from .lir import lower_hash, lower_program, verify_lir
 from .optimize import optimize_lir, optimize_program
+from .primitives import primitive_id
 from .resources import ResourceLimits
 from .verify import verify_program
 from .wasm import compile_program_to_wasm
@@ -98,6 +99,12 @@ def main() -> int:
     )
     p_optimize_lir.add_argument("file")
 
+    p_primitive_id = sub.add_parser(
+        "primitive-id",
+        help="compute the content-addressed id of a semantic primitive definition",
+    )
+    p_primitive_id.add_argument("file")
+
     p_compile_wasm = sub.add_parser(
         "compile-wasm",
         help="compile supported verified APL to a WebAssembly 1.0 binary",
@@ -138,6 +145,8 @@ def main() -> int:
             print(canonical_text(optimize_program(program)))
         elif args.command == "optimize-lir":
             print(canonical_text(optimize_lir(program)))
+        elif args.command == "primitive-id":
+            print(primitive_id(program))
         elif args.command == "compile-wasm":
             artifact = compile_program_to_wasm(program)
             Path(args.output).write_bytes(artifact.binary)
