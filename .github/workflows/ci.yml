@@ -41,6 +41,8 @@ jobs:
           apl verify examples/limits.apl
           apl verify examples/contracts.apl
           apl verify examples/contracts_fail.apl
+          apl verify examples/ranges.apl
+          apl verify examples/ranges_fail.apl
       - name: Run successful examples
         run: |
           output="$(apl run examples/hello.apl)"
@@ -63,6 +65,8 @@ jobs:
           test "$output" = '[return i64] 42'
           output="$(apl run examples/contracts.apl)"
           test "$output" = '[return i64] 6'
+          output="$(apl run examples/ranges.apl)"
+          test "$output" = '[return i64] 42'
       - name: Run explicit trap example
         run: |
           set +e
@@ -103,3 +107,12 @@ jobs:
           set -e
           test "$status" -eq 2
           test "$output" = "APL error: [apl.precondition_failed] main.requires[0]: contract 'enabled' failed: demonstration precondition failed"
+
+      - name: Enforce range refinements
+        run: |
+          set +e
+          output="$(apl run examples/ranges_fail.apl)"
+          status=$?
+          set -e
+          test "$status" -eq 2
+          test "$output" = 'APL error: [apl.range_violation] main[1]: value 101 is outside range [0, 100]'
