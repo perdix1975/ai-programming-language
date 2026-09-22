@@ -1,0 +1,28 @@
+{
+  "apl":"0.0.12",
+  "module":"v012_invalid_range_bounds",
+  "capabilities":[],
+  "limits":{"steps":10,"output_lines":0,"host_reads":0},
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"i64",
+      "effects":[],
+      "requires":[],
+      "ensures":[],
+      "body":[
+        {"op":"const","id":"raw","type":"i64","value":5},
+        {
+          "op":"range.check",
+          "id":"bounded",
+          "type":{"range":{"min":10,"max":1}},
+          "args":["raw"]
+        },
+        {"op":"range.value","id":"wide","type":"i64","args":["bounded"]},
+        {"op":"return","value":"wide"}
+      ]
+    }
+  ]
+}
