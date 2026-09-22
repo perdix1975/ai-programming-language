@@ -1,6 +1,6 @@
 # APL Specification v0
 
-Status: **Draft 0.0.11**
+Status: **Draft 0.0.12**
 
 This document defines the executable v0 subset of APL. The purpose of v0 is to establish stable semantic machinery before adding richer type invariants, concurrency, or native compilation.
 
@@ -20,7 +20,8 @@ The current reference implementation supports:
 - `0.0.8`: a strict extension adding exact function effects, exact module capability declarations, and explicit host grants;
 - `0.0.9`: a strict extension adding deterministic fixture-backed filesystem and network read operations;
 - `0.0.10`: a strict extension adding deterministic execution resource budgets and host-side tightening;
-- `0.0.11`: a strict extension adding typed declarative function preconditions and postconditions.
+- `0.0.11`: a strict extension adding typed declarative function preconditions and postconditions;
+- `0.0.12`: a strict extension adding structural bounded `i64` range types and explicit refinement/widening.
 
 Older programs retain their declared-version meaning. An operation is valid only when introduced by that program's declared version or an earlier one.
 
@@ -67,6 +68,7 @@ v0 defines:
 | `unit` | no value |
 | `{"array": T, "len": N}` | immutable fixed-length array of `N` values of type `T` (0.0.5+) |
 | `{"record": {"field": T, ...}}` | immutable structural record with named fields (0.0.6+) |
+| `{"range":{"min":A,"max":B}}` | structural bounded `i64` refinement type (0.0.12+) |
 
 Integer constants are restricted to `[-2^63, 2^63-1]`.
 
@@ -836,7 +838,121 @@ If the step budget is exhausted during contract evaluation, `apl.resource_limit`
 
 APL 0.0.1 through 0.0.10 functions are not retroactively required to contain `requires` or `ensures`. The contract fields themselves are version-gated and are rejected when declared before 0.0.11, preventing legacy programs from silently acquiring newer semantics.
 
-## 17. Verification
+## 17. Draft 0.0.12 structural range types
+
+### 17.1 type descriptor
+
+Draft 0.0.12 introduces a bounded structural refinement of `i64`:
+
+```json
+{"range":{"min":0,"max":100}}
+```
+
+A range descriptor contains exactly `min` and `max`. Both are non-Boolean integer literals inside the full signed `i64` domain and `min <= max`.
+
+The bounds are part of type identity. Therefore:
+
+```json
+{"range":{"min":0,"max":10}}
+```
+
+and
+
+```json
+{"range":{"min":0,"max":100}}
+```
+
+are distinct types even though one mathematical interval is contained in the other.
+
+Range types are structural and may appear anywhere another non-`unit` value type may appear, including:
+
+- function parameters and return types;
+- arrays and record fields;
+- `if` result types;
+- `repeat` carried values.
+
+The runtime representation of a range value is the same mathematical integer value as its underlying `i64`, but the static APL type remains the exact range descriptor.
+
+### 17.2 explicit refinement with `range.check`
+
+```json
+{
+  "op":"range.check",
+  "id":"percent",
+  "type":{"range":{"min":0,"max":100}},
+  "args":["raw"]
+}
+```
+
+Verification requires:
+
+- Draft 0.0.12+;
+- exactly one source SSA id;
+- source type exactly `i64`;
+- result type a valid range descriptor.
+
+Execution checks the source value against the inclusive range bounds.
+
+If the value is inside the range, the operation produces the same integer value with the declared range type.
+
+If the value is outside the range, execution traps with:
+
+```text
+apl.range_violation
+```
+
+The trap occurs at the `range.check` instruction before a refined SSA value is bound.
+
+### 17.3 explicit widening with `range.value`
+
+```json
+{
+  "op":"range.value",
+  "id":"raw",
+  "type":"i64",
+  "args":["percent"]
+}
+```
+
+Verification requires exactly one source SSA id whose type is a range descriptor. The result type is exactly `i64`.
+
+Execution preserves the mathematical integer value and removes the static refinement type.
+
+### 17.4 no implicit conversions
+
+Draft 0.0.12 deliberately defines no implicit subtype coercion.
+
+Consequences include:
+
+- a range value is not accepted where plain `i64` is required;
+- plain `i64` is not accepted where a range type is required;
+- two different range descriptors are not interchangeable;
+- arithmetic instructions continue to require plain `i64` operands;
+- changing from one range type to another requires `range.value` followed by a new `range.check`.
+
+This explicit conversion discipline keeps verification local and makes every dynamic refinement check visible in IR.
+
+### 17.5 equality and contracts
+
+Two values of the exact same range type may be compared with ordinary `eq`.
+
+Draft 0.0.11 contract predicates are extended so `lt`, `le`, `gt`, and `ge` may compare two values of the exact same range type. A range value and plain `i64`, or two different range types, are not implicitly comparable through those ordered contract operators.
+
+Range refinement itself adds no host effect and requires no capability.
+
+### 17.6 resource accounting
+
+`range.check` and `range.value` are ordinary IR instructions and therefore each consume one Draft 0.0.10 `steps` unit before their semantics begin.
+
+No additional hidden step is charged for the bounds comparison inside `range.check`.
+
+If the step budget is exhausted at `range.check`, `apl.resource_limit` occurs before range validation. Otherwise an out-of-range value produces `apl.range_violation`.
+
+### 17.7 compatibility
+
+APL 0.0.1 through 0.0.11 do not recognize range type descriptors or the two range operations. Use before 0.0.12 is rejected by verification.
+
+## 18. Verification
 
 A conforming verifier rejects at least:
 
@@ -859,7 +975,7 @@ A conforming verifier rejects at least:
 
 Execution is defined only for verified programs.
 
-## 18. Canonical textual representation
+## 19. Canonical textual representation
 
 The v0 canonical encoding is JSON with:
 
@@ -873,11 +989,11 @@ Canonical identity is SHA-256 over the UTF-8 bytes of that encoding.
 
 This is an encoding identity, not yet a proof of semantic equivalence between differently structured programs.
 
-## 19. Reference implementation
+## 20. Reference implementation
 
 The Python implementation under `src/apl` is the executable reference for the current draft. Tests under `tests/` form a growing conformance suite.
 
-## 20. Deliberately absent
+## 21. Deliberately absent
 
 Not yet defined:
 
@@ -885,7 +1001,7 @@ Not yet defined:
 - unbounded/general loops;
 - algebraic data types;
 - trap recovery, handlers, and resumable exceptions;
-- refinement/range types and reusable type invariants;
+- general predicate-backed refinement types and reusable type invariants;
 - live filesystem/network adapters and database capability semantics;
 - file/network/database access;
 - concurrency;
