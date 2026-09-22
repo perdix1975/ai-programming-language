@@ -29,7 +29,7 @@ The executable reference core includes:
 - structural bounded `i64` range types with explicit `range.check` refinement and `range.value` widening;
 - symbolic structural quantity types with static unit-exponent algebra and explicit attach/value conversions;
 - reusable typed module invariants for function contracts and explicit `invariant.check` assertions;
-- content-addressed pure semantic primitives with machine-generated SHA-256 ids and deterministic lowering to ordinary verified core functions;
+- content-addressed pure semantic primitives with machine-generated SHA-256 ids and deterministic lowering to ordinary verified core functions;\n- replay-verifiable lowering certificates binding source identity, lowered-core identity, primitive mappings, and source call sites;
 - deterministic normalized compiler LIR 0.1 with explicit CFG/block parameters, source-step ticks, independent verification, and stable lower hashes;
 - a real WebAssembly 1.0 backend covering checked arithmetic, calls, CFG control, bounded `repeat`, UTF-8 strings, immutable arrays/records, host effects, all resource budgets, contracts/invariants, ranges, quantities and diagnostic-preserving application traps;
 - deterministic trap-safe LIR optimization plus systematic interpreter ↔ baseline WASM ↔ optimized WASM differential conformance;
@@ -112,6 +112,13 @@ apl optimize examples/wasm_scalar.apl > program.optimized.lir.json
 apl optimize-lir program.optimized.lir.json > program.optimized-again.lir.json
 
 apl primitive-id examples/primitive_square_plus_one.json
+apl lower-core examples/semantic_primitives.apl > semantic_primitives.core.apl
+apl lowering-proof examples/semantic_primitives.apl > semantic_primitives.proof.json
+apl verify-lowering-proof \
+  examples/semantic_primitives.apl \
+  semantic_primitives.core.apl \
+  semantic_primitives.proof.json
+
 apl verify examples/semantic_primitives.apl
 apl run examples/semantic_primitives.apl
 apl compile-wasm examples/semantic_primitives.apl semantic_primitives.wasm
@@ -132,7 +139,7 @@ Human-friendly surface syntax can be added later, but it will lower into the sam
 - [Architecture](docs/ARCHITECTURE.md)
 - [Normalized compiler LIR 0.1](docs/LIR_v0.md)
 - [WebAssembly backend](docs/WASM_BACKEND.md)
-- [Compiler equivalence](docs/COMPILER_EQUIVALENCE.md)
+- [Compiler equivalence](docs/COMPILER_EQUIVALENCE.md)\n- [Semantic lowering certificates](docs/LOWERING_PROOFS.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Conformance testing](docs/CONFORMANCE.md)
 
@@ -153,7 +160,7 @@ APL semantic IR
     +--> normalized CFG LIR --> optimizer --> WASM/native/accelerator backend
 ```
 
-M4 is complete. M5 is underway: Draft 0.0.15 now provides content-addressed semantic primitives and machine-generated primitive identifiers while preserving the existing verifier/interpreter/LIR/WASM trusted path.
+M4 is complete. M5 is underway: Draft 0.0.15 provides content-addressed semantic primitives and machine-generated ids, and deterministic replay certificates now make primitive-to-core lowering explicitly auditable and checkable.
 
 ## License
 
