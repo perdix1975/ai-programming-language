@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from typing import Any
 
 from .errors import CompilationError
@@ -88,6 +89,15 @@ def _is_array_type(typ: Any) -> bool:
 
 def _is_record_type(typ: Any) -> bool:
     return isinstance(typ, dict) and set(typ) == {"record"}
+
+
+def _type_descriptor_text(typ: Any) -> str:
+    return json.dumps(
+        typ,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
 
 
 def _is_i64_slot_type(typ: Any) -> bool:
@@ -519,8 +529,15 @@ class _FunctionCompiler:
                 name == "value.eq"
                 and (_is_array_type(comparison_type) or _is_record_type(comparison_type))
             ):
-                raise CompilationError(
-                    "WASM structural array/record equality is not implemented yet"
+                descriptor = _type_descriptor_text(comparison_type)
+                descriptor_handle = self.string_handles[descriptor]
+                a, b = op["args"]
+                return (
+                    _op(0x42, _sleb(descriptor_handle, 64))
+                    + self._arg(a)
+                    + self._arg(b)
+                    + _call(self.import_indices["struct_eq"])
+                    + _local_set(self._index(op["id"]))
                 )
             if (
                 name == "value.eq"
@@ -839,13 +856,14 @@ def _function_value_types(fn: dict[str, Any]) -> dict[str, Any]:
 
 def _collect_runtime_needs(
     lir: dict[str, Any],
-) -> tuple[set[str], set[str], bool, bool, bool, bool]:
+) -> tuple[set[str], set[str], bool, bool, bool, bool, bool]:
     string_constants: set[str] = set()
     console_types: set[str] = set()
     needs_string_eq = False
     needs_fs = False
     needs_net = False
     needs_application_trap = False
+    needs_struct_eq = False
 
     for fn in lir["functions"]:
         types = _function_value_types(fn)
@@ -854,8 +872,15 @@ def _collect_runtime_needs(
                 name = op["op"]
                 if name == "const" and op.get("type") == "string":
                     string_constants.add(op["value"])
-                elif name == "value.eq" and types[op["args"][0]] == "string":
-                    needs_string_eq = True
+                elif name == "value.eq":
+                    comparison_type = types[op["args"][0]]
+                    if comparison_type == "string":
+                        needs_string_eq = True
+                    elif _is_array_type(comparison_type) or _is_record_type(comparison_type):
+                        needs_struct_eq = True
+                        string_constants.add(
+                            _type_descriptor_text(comparison_type)
+                        )
                 elif name == "console.write":
                     console_types.add(types[op["arg"]])
                 elif name == "host.fs.read_text":
@@ -877,6 +902,7 @@ def _collect_runtime_needs(
         needs_fs,
         needs_net,
         needs_application_trap,
+        needs_struct_eq,
     )
 
 
@@ -916,6 +942,7 @@ def compile_lir_to_wasm(lir: dict[str, Any]) -> WasmArtifact:
         needs_fs,
         needs_net,
         needs_application_trap,
+        needs_struct_eq,
     ) = _collect_runtime_needs(lir)
     string_handles, string_segments, static_end = _build_string_pool(
         string_constants
@@ -953,6 +980,7 @@ def compile_lir_to_wasm(lir: dict[str, Any]) -> WasmArtifact:
         or needs_net
         or needs_string_eq
         or needs_application_trap
+        or needs_struct_eq
         or needs_structured_memory
         or "string" in console_types
         or any(
@@ -995,6 +1023,10 @@ def compile_lir_to_wasm(lir: dict[str, Any]) -> WasmArtifact:
         import_specs.append(("require_capabilities", ["bool"], "unit"))
     if needs_string_eq:
         import_specs.append(("string_eq", ["string", "string"], "bool"))
+    if needs_struct_eq:
+        import_specs.append(
+            ("struct_eq", ["string", "bool", "bool"], "bool")
+        )
     if needs_application_trap:
         import_specs.append(
             ("application_trap", ["string", "string", "string"], "unit")
