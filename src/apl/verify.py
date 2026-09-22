@@ -295,9 +295,8 @@ def verify_program(program: Any) -> None:
         _validate_program_limits(program.get("limits"))
 
     invariant_signatures: dict[str, tuple[Any, ...]] = {}
-    invariant_nodes: dict[str, dict[str, Any]] = {}
     if _supports(version, 14):
-        invariant_signatures, invariant_nodes = _read_invariants(
+        invariant_signatures, _ = _read_invariants(
             program.get("invariants"), version
         )
     else:
