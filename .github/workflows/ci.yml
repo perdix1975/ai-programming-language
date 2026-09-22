@@ -258,6 +258,32 @@ jobs:
               ["console.write"],
               5
             );
+            const unavailable = await instantiateAplWasm(
+              "/tmp/wasm_host_read_limit_fail.wasm",
+              {
+                grants: ["fs.read_text"],
+                hostAvailable: false,
+              }
+            );
+            try {
+              unavailable.instance.exports.apl_entry();
+              throw new Error("expected host unavailable before host-read budget");
+            } catch (err) {
+              if (err.aplCode !== "apl.host_unavailable") throw err;
+            }
+
+            const missing = await instantiateAplWasm("/tmp/host_io.wasm", {
+              grants: ["console.write", "fs.read_text", "net.get_text"],
+              files: {},
+              network: {"https://example.test/message": "network fixture"},
+            });
+            try {
+              missing.instance.exports.apl_entry();
+              throw new Error("expected missing host resource");
+            } catch (err) {
+              if (err.aplCode !== "apl.host_resource_missing") throw err;
+            }
+
             await expectTrap(
               "/tmp/wasm_host_read_limit_fail.wasm",
               ["fs.read_text"],
