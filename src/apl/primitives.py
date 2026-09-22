@@ -83,6 +83,17 @@ def _rewrite_calls(
         node = deepcopy(ins)
         op = node.get("op")
 
+        if op == "call":
+            target = node.get("function")
+            _expect(
+                not (
+                    isinstance(target, str)
+                    and target.startswith(PRIMITIVE_FUNCTION_PREFIX)
+                ),
+                f"{item_where}: ordinary calls cannot target reserved generated "
+                f"primitive functions; use primitive.call",
+            )
+
         if op == "primitive.call":
             identifier = node.get("primitive")
             _expect(
