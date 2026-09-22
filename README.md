@@ -28,7 +28,8 @@ The executable reference core includes:
 - typed declarative function `requires`/`ensures` contracts with deterministic pre/postcondition traps;
 - structural bounded `i64` range types with explicit `range.check` refinement and `range.value` widening;
 - symbolic structural quantity types with static unit-exponent algebra and explicit attach/value conversions;
-- reusable typed module invariants for function contracts and explicit `invariant.check` assertions;\n- content-addressed pure semantic primitives with machine-generated SHA-256 ids and deterministic lowering to ordinary verified core functions;
+- reusable typed module invariants for function contracts and explicit `invariant.check` assertions;
+- content-addressed pure semantic primitives with machine-generated SHA-256 ids and deterministic lowering to ordinary verified core functions;
 - deterministic normalized compiler LIR 0.1 with explicit CFG/block parameters, source-step ticks, independent verification, and stable lower hashes;
 - a real WebAssembly 1.0 backend covering checked arithmetic, calls, CFG control, bounded `repeat`, UTF-8 strings, immutable arrays/records, host effects, all resource budgets, contracts/invariants, ranges, quantities and diagnostic-preserving application traps;
 - deterministic trap-safe LIR optimization plus systematic interpreter ↔ baseline WASM ↔ optimized WASM differential conformance;
