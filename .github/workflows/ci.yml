@@ -143,9 +143,12 @@ jobs:
           apl compile-wasm examples/wasm_string_eq.apl /tmp/wasm_string_eq.wasm
           apl compile-wasm examples/effects.apl /tmp/effects.wasm
           apl compile-wasm examples/host_io.apl /tmp/host_io.wasm
+          apl compile-wasm examples/arrays.apl /tmp/arrays.wasm
+          apl compile-wasm examples/records.apl /tmp/records.wasm
           apl compile-wasm examples/trap.apl /tmp/application_trap.wasm
           apl compile-wasm examples/wasm_output_limit_fail.apl /tmp/wasm_output_limit_fail.wasm
           apl compile-wasm examples/wasm_host_read_limit_fail.apl /tmp/wasm_host_read_limit_fail.wasm
+          apl compile-wasm examples/wasm_array_oob.apl /tmp/wasm_array_oob.wasm
           node - <<'NODE'
           const {instantiateAplWasm} = require("./tests/wasm_runtime.js");
 
@@ -199,6 +202,22 @@ jobs:
               throw new Error(`unexpected host output: ${host.state.output}`);
             }
 
+            const arrays = await instantiateAplWasm("/tmp/arrays.wasm");
+            const arrayResult = arrays.instance.exports.apl_entry();
+            if (arrayResult !== 23n || arrays.state.output.join("\n") !== "23") {
+              throw new Error(
+                `unexpected compiled array result/output: ${arrayResult} / ${arrays.state.output}`
+              );
+            }
+
+            const records = await instantiateAplWasm("/tmp/records.wasm");
+            const recordResult = records.instance.exports.apl_entry();
+            if (recordResult !== 37n || records.state.output.join("\n") !== "37") {
+              throw new Error(
+                `unexpected compiled record result/output: ${recordResult} / ${records.state.output}`
+              );
+            }
+
             const explicitTrap = await instantiateAplWasm(
               "/tmp/application_trap.wasm"
             );
@@ -233,6 +252,11 @@ jobs:
               ["fs.read_text"],
               5,
               {files: {"/message.txt": "unused"}}
+            );
+            await expectTrap(
+              "/tmp/wasm_array_oob.wasm",
+              [],
+              10
             );
           })().catch((err) => {
             console.error(err);
