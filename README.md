@@ -134,7 +134,7 @@ APL semantic IR
     +--> verifier
     +--> reference execution
     +--> human audit projection
-    +--> optimizer --> WASM/native/accelerator backend
+    +--> normalized CFG LIR --> optimizer --> WASM/native/accelerator backend
 ```
 
 M3 is complete. M4 is underway: normalized CFG LIR 0.1 and its independent verifier are implemented; the next compiler-path checkpoint is the WASM backend.
