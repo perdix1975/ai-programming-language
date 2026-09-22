@@ -23,7 +23,8 @@ The current reference implementation supports:
 - `0.0.11`: a strict extension adding typed declarative function preconditions and postconditions;
 - `0.0.12`: a strict extension adding structural bounded `i64` range types and explicit refinement/widening;
 - `0.0.13`: a strict extension adding symbolic structural quantity types and static unit-exponent algebra;
-- `0.0.14`: a strict extension adding reusable typed module invariants for contracts and explicit IR checks;\n- `0.0.15`: a strict extension adding content-addressed pure semantic primitives with deterministic lowering to the existing core.
+- `0.0.14`: a strict extension adding reusable typed module invariants for contracts and explicit IR checks;
+- `0.0.15`: a strict extension adding content-addressed pure semantic primitives with deterministic lowering to the existing core.
 
 Older programs retain their declared-version meaning. An operation is valid only when introduced by that program's declared version or an earlier one.
 
@@ -39,7 +40,8 @@ A program object contains:
 - `functions`: non-empty list of function objects;
 - `capabilities`: in Draft 0.0.8+, the exact sorted list of host capabilities required by the module;
 - `limits`: in Draft 0.0.10+, the exact deterministic execution-budget object;
-- `invariants`: in Draft 0.0.14+, the ordered module-level reusable invariant definitions;\n- `primitives`: in Draft 0.0.15+, the ordered module-level content-addressed semantic primitive definitions.
+- `invariants`: in Draft 0.0.14+, the ordered module-level reusable invariant definitions;
+- `primitives`: in Draft 0.0.15+, the ordered module-level content-addressed semantic primitive definitions.
 
 The entry function must exist and require zero parameters.
 
