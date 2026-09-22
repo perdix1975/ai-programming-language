@@ -59,7 +59,7 @@
 
 - [x] content-addressed pure semantic primitive mechanism
 - [x] machine-generated primitive identifiers
-- explicit lowering proofs/checks
+- [x] explicit deterministic-replay lowering certificates/checks
 - learned cost model
 - profile-guided specialization
 - human audit projection
