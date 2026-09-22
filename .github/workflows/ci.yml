@@ -74,6 +74,7 @@ jobs:
           apl compile-wasm examples/wasm_scalar.apl /tmp/wasm_scalar.wasm
           apl compile-wasm examples/wasm_mul.apl /tmp/wasm_mul.wasm
           apl compile-wasm examples/wasm_if.apl /tmp/wasm_if.wasm
+          apl compile-wasm examples/wasm_repeat.apl /tmp/wasm_repeat.wasm
           node - <<'NODE'
           const fs = require("fs");
           const bytes = fs.readFileSync("/tmp/wasm_scalar.wasm");
@@ -94,8 +95,9 @@ jobs:
           Promise.all([
             run("/tmp/wasm_scalar.wasm"),
             run("/tmp/wasm_mul.wasm"),
-            run("/tmp/wasm_if.wasm")
-          ]).then(([addValue, mulValue, ifValue]) => {
+            run("/tmp/wasm_if.wasm"),
+            run("/tmp/wasm_repeat.wasm")
+          ]).then(([addValue, mulValue, ifValue, repeatValue]) => {
             if (addValue !== 42n) {
               throw new Error(`expected add 42n, got ${addValue}`);
             }
@@ -105,6 +107,9 @@ jobs:
             if (ifValue !== 42n) {
               throw new Error(`expected if/call 42n, got ${ifValue}`);
             }
+            if (repeatValue !== 120n) {
+              throw new Error(`expected repeat 120n, got ${repeatValue}`);
+            }
           });
           NODE
 
@@ -113,6 +118,8 @@ jobs:
           apl compile-wasm examples/wasm_overflow.apl /tmp/wasm_overflow.wasm
           apl compile-wasm examples/wasm_mul_overflow.apl /tmp/wasm_mul_overflow.wasm
           apl compile-wasm examples/wasm_divzero.apl /tmp/wasm_divzero.wasm
+          apl compile-wasm examples/wasm_repeat_negative.apl /tmp/wasm_repeat_negative.wasm
+          apl compile-wasm examples/wasm_repeat_exceeds.apl /tmp/wasm_repeat_exceeds.wasm
           node - <<'NODE'
           const fs = require("fs");
           async function trapCode(path) {
@@ -140,8 +147,10 @@ jobs:
           Promise.all([
             trapCode("/tmp/wasm_overflow.wasm"),
             trapCode("/tmp/wasm_mul_overflow.wasm"),
-            trapCode("/tmp/wasm_divzero.wasm")
-          ]).then(([overflow, mulOverflow, divzero]) => {
+            trapCode("/tmp/wasm_divzero.wasm"),
+            trapCode("/tmp/wasm_repeat_negative.wasm"),
+            trapCode("/tmp/wasm_repeat_exceeds.wasm")
+          ]).then(([overflow, mulOverflow, divzero, repeatNegative, repeatExceeds]) => {
             if (overflow !== 1) {
               throw new Error(`expected overflow trap 1, got ${overflow}`);
             }
@@ -150,6 +159,12 @@ jobs:
             }
             if (divzero !== 2) {
               throw new Error(`expected divzero trap 2, got ${divzero}`);
+            }
+            if (repeatNegative !== 3) {
+              throw new Error(`expected repeat-negative trap 3, got ${repeatNegative}`);
+            }
+            if (repeatExceeds !== 4) {
+              throw new Error(`expected repeat-exceeds trap 4, got ${repeatExceeds}`);
             }
           });
           NODE
