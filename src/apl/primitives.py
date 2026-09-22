@@ -74,6 +74,7 @@ def _scan_no_external_calls(instructions: Any, where: str) -> None:
 def _rewrite_calls(
     instructions: list[dict[str, Any]],
     primitive_functions: dict[str, str],
+    primitive_definitions: dict[str, dict[str, Any]],
     where: str,
 ) -> list[dict[str, Any]]:
     rewritten: list[dict[str, Any]] = []
@@ -92,6 +93,19 @@ def _rewrite_calls(
                 isinstance(node.get("args"), list),
                 f"{item_where}: primitive.call args must be a list",
             )
+            definition = primitive_definitions[identifier]
+            if definition["returns"] == "unit":
+                _expect(
+                    set(node) == {"op", "primitive", "args"},
+                    f"{item_where}: unit primitive.call must contain exactly "
+                    "'op', 'primitive', and 'args'",
+                )
+            else:
+                _expect(
+                    set(node) == {"op", "id", "type", "primitive", "args"},
+                    f"{item_where}: value primitive.call must contain exactly "
+                    "'op', 'id', 'type', 'primitive', and 'args'",
+                )
             replacement: dict[str, Any] = {
                 "op": "call",
                 "function": primitive_functions[identifier],
@@ -106,14 +120,17 @@ def _rewrite_calls(
 
         if op == "if":
             node["then"] = _rewrite_calls(
-                node["then"], primitive_functions, f"{item_where}.then"
+                node["then"], primitive_functions, primitive_definitions,
+                f"{item_where}.then"
             )
             node["else"] = _rewrite_calls(
-                node["else"], primitive_functions, f"{item_where}.else"
+                node["else"], primitive_functions, primitive_definitions,
+                f"{item_where}.else"
             )
         elif op == "repeat":
             node["body"] = _rewrite_calls(
-                node["body"], primitive_functions, f"{item_where}.body"
+                node["body"], primitive_functions, primitive_definitions,
+                f"{item_where}.body"
             )
         rewritten.append(node)
     return rewritten
@@ -182,6 +199,7 @@ def lower_primitives(program: dict[str, Any]) -> dict[str, Any]:
             node["body"] = _rewrite_calls(
                 node["body"],
                 primitive_functions,
+                by_id,
                 f"functions[{index}].body",
             )
         rewritten_functions.append(node)
