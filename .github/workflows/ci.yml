@@ -90,6 +90,47 @@ jobs:
           });
           NODE
 
+      - name: Enforce WebAssembly scalar trap ABI
+        run: |
+          apl compile-wasm examples/wasm_overflow.apl /tmp/wasm_overflow.wasm
+          apl compile-wasm examples/wasm_divzero.apl /tmp/wasm_divzero.wasm
+          node - <<'NODE'
+          const fs = require("fs");
+          async function trapCode(path) {
+            let seen = null;
+            const imports = {
+              apl: {
+                trap(code) {
+                  seen = code;
+                  throw new Error("APL trap");
+                }
+              }
+            };
+            try {
+              const {instance} = await WebAssembly.instantiate(
+                fs.readFileSync(path),
+                imports
+              );
+              instance.exports.apl_entry();
+            } catch (err) {
+              if (seen === null) throw err;
+              return seen;
+            }
+            throw new Error("expected compiled APL trap");
+          }
+          Promise.all([
+            trapCode("/tmp/wasm_overflow.wasm"),
+            trapCode("/tmp/wasm_divzero.wasm")
+          ]).then(([overflow, divzero]) => {
+            if (overflow !== 1) {
+              throw new Error(`expected overflow trap 1, got ${overflow}`);
+            }
+            if (divzero !== 2) {
+              throw new Error(`expected divzero trap 2, got ${divzero}`);
+            }
+          });
+          NODE
+
       - name: Run successful examples
         run: |
           output="$(apl run examples/hello.apl)"
