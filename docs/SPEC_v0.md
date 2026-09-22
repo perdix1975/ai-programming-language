@@ -1,6 +1,6 @@
 # APL Specification v0
 
-Status: **Draft 0.0.12**
+Status: **Draft 0.0.13**
 
 This document defines the executable v0 subset of APL. The purpose of v0 is to establish stable semantic machinery before adding richer type invariants, concurrency, or native compilation.
 
@@ -21,7 +21,8 @@ The current reference implementation supports:
 - `0.0.9`: a strict extension adding deterministic fixture-backed filesystem and network read operations;
 - `0.0.10`: a strict extension adding deterministic execution resource budgets and host-side tightening;
 - `0.0.11`: a strict extension adding typed declarative function preconditions and postconditions;
-- `0.0.12`: a strict extension adding structural bounded `i64` range types and explicit refinement/widening.
+- `0.0.12`: a strict extension adding structural bounded `i64` range types and explicit refinement/widening;
+- `0.0.13`: a strict extension adding symbolic structural quantity types and static unit-exponent algebra.
 
 Older programs retain their declared-version meaning. An operation is valid only when introduced by that program's declared version or an earlier one.
 
@@ -69,6 +70,7 @@ v0 defines:
 | `{"array": T, "len": N}` | immutable fixed-length array of `N` values of type `T` (0.0.5+) |
 | `{"record": {"field": T, ...}}` | immutable structural record with named fields (0.0.6+) |
 | `{"range":{"min":A,"max":B}}` | structural bounded `i64` refinement type (0.0.12+) |
+| `{"quantity":{"m":1,"s":-1}}` | symbolic integer quantity with structural unit vector (0.0.13+) |
 
 Integer constants are restricted to `[-2^63, 2^63-1]`.
 
@@ -773,7 +775,7 @@ Draft 0.0.11 defines:
 | Operator | Arity | Operand rule | Result |
 |---|---:|---|---|
 | `eq` | 2 | identical non-`unit` types | `bool` |
-| `lt`, `le`, `gt`, `ge` | 2 | both `i64`; from 0.0.12, also identical range types | `bool` |
+| `lt`, `le`, `gt`, `ge` | 2 | both `i64`; from 0.0.12 identical range types; from 0.0.13 identical quantity types | `bool` |
 | `not` | 1 | `bool` | `bool` |
 | `and`, `or` | 2 | both `bool` | `bool` |
 
@@ -952,7 +954,145 @@ If the step budget is exhausted at `range.check`, `apl.resource_limit` occurs be
 
 APL 0.0.1 through 0.0.11 do not recognize range type descriptors or the two range operations. Use before 0.0.12 is rejected by verification.
 
-## 18. Verification
+## 18. Draft 0.0.13 symbolic quantities and unit algebra
+
+### 18.1 quantity type descriptor
+
+Draft 0.0.13 introduces symbolic quantity types whose runtime magnitude is a signed `i64` and whose static type carries a unit-exponent vector:
+
+```json
+{"quantity":{"m":1,"s":-1}}
+```
+
+The `quantity` object maps canonical unit symbols to nonzero signed integer exponents.
+
+Rules:
+
+- at most 16 unit terms;
+- symbols match `[a-z][a-z0-9_.-]{0,31}`;
+- each exponent is a non-Boolean integer in `[-16,16]` excluding zero;
+- object member order is not part of type identity;
+- the empty vector `{"quantity":{}}` is valid and denotes an explicit dimensionless quantity.
+
+A quantity type is structural. Exact symbol/exponent equality defines type equality.
+
+Draft 0.0.13 does **not** assign physical meaning, scale, or conversion factors to symbols. Thus `{"quantity":{"m":1}}` and `{"quantity":{"cm":1}}` are unrelated types unless future language rules explicitly define a conversion mechanism.
+
+The empty quantity vector remains distinct from plain `i64`; conversion between them is explicit.
+
+### 18.2 `quantity.attach` and `quantity.value`
+
+`quantity.attach` attaches a static unit vector to a plain integer magnitude:
+
+```json
+{
+  "op":"quantity.attach",
+  "id":"distance",
+  "type":{"quantity":{"m":1}},
+  "args":["raw"]
+}
+```
+
+Verification requires exactly one source SSA id of type `i64` and a valid quantity result type. Execution preserves the integer magnitude.
+
+`quantity.value` removes the static quantity type:
+
+```json
+{
+  "op":"quantity.value",
+  "id":"raw",
+  "type":"i64",
+  "args":["distance"]
+}
+```
+
+Verification requires exactly one quantity source. Execution again preserves the integer magnitude.
+
+No implicit attach, detach, scaling, or unit conversion exists.
+
+### 18.3 addition and subtraction
+
+`quantity.add` and `quantity.sub` each require two operands of the **exact same quantity type** and produce that same quantity type.
+
+For example, adding two metres is valid; adding metres and seconds is a verification error.
+
+Runtime magnitude arithmetic uses the ordinary APL signed-`i64` addition/subtraction rules, including `apl.i64_overflow`.
+
+### 18.4 multiplication
+
+`quantity.mul` requires two quantity operands.
+
+The result unit vector is derived statically by adding exponents for like symbols and deleting any symbol whose resulting exponent is zero.
+
+Example:
+
+```text
+{m:1,s:-1} * {s:1} = {m:1}
+```
+
+The instruction's declared result type must exactly equal the derived quantity type.
+
+A derived exponent whose magnitude exceeds 16, or a derived vector with more than 16 nonzero terms, is a verification error.
+
+Runtime magnitudes are multiplied using ordinary APL signed-`i64` multiplication semantics and therefore trap with `apl.i64_overflow` on overflow.
+
+### 18.5 division
+
+`quantity.div` also requires two quantity operands.
+
+The result unit vector is derived by subtracting the right operand's exponents from the left operand's exponents, again removing zero terms.
+
+Example:
+
+```text
+{m:1} / {s:1} = {m:1,s:-1}
+```
+
+The declared result type must exactly equal the derived type.
+
+Runtime magnitude division uses the same truncation-toward-zero semantics as ordinary APL `div`, including `apl.division_by_zero` and signed overflow behavior.
+
+Division of identical unit vectors therefore yields the explicit dimensionless quantity `{"quantity":{}}`, not plain `i64`.
+
+### 18.6 equality, contracts, signatures, and structured values
+
+Two values of the exact same quantity type may be compared with ordinary `eq`.
+
+From Draft 0.0.13, contract predicate `lt`, `le`, `gt`, and `ge` also accept operands of the exact same quantity type.
+
+Different quantity vectors are not implicitly comparable.
+
+Quantity types may be used anywhere another non-`unit` type may appear, including function parameters/returns, arrays, records, `if` results, and `repeat` carried values. Exact structural type equality is required at every boundary.
+
+### 18.7 resource and effect semantics
+
+Each `quantity.*` instruction is an ordinary IR instruction and consumes exactly one `steps` unit before its semantics begin.
+
+Unit-vector derivation is a verifier operation and consumes no runtime steps.
+
+Quantity operations add no host effects and require no capabilities.
+
+### 18.8 deliberate limitations
+
+Draft 0.0.13 is symbolic dimensional algebra, not a unit-conversion library.
+
+It does not define:
+
+- SI base-unit registries;
+- aliases such as metre/meter;
+- prefixes such as kilo/milli;
+- scale conversions such as centimetres to metres;
+- affine units such as Celsius/Fahrenheit;
+- floating-point or rational magnitudes;
+- automatic simplification from a named derived unit to another name.
+
+These can be layered later without changing the meaning of the structural exponent algebra defined here.
+
+### 18.9 compatibility
+
+APL 0.0.1 through 0.0.12 do not recognize quantity type descriptors or `quantity.*` operations. Use before 0.0.13 is rejected by verification.
+
+## 19. Verification
 
 A conforming verifier rejects at least:
 
@@ -972,11 +1112,12 @@ A conforming verifier rejects at least:
 - malformed, ill-typed, or out-of-scope function contract predicates;
 - duplicate function-local contract identifiers;
 - malformed or out-of-bounds range descriptors and invalid explicit range conversions;
+- malformed quantity descriptors, incompatible quantity operands, or incorrect derived quantity types;
 - use of an operation before the language version that introduced it.
 
 Execution is defined only for verified programs.
 
-## 19. Canonical textual representation
+## 20. Canonical textual representation
 
 The v0 canonical encoding is JSON with:
 
@@ -990,11 +1131,11 @@ Canonical identity is SHA-256 over the UTF-8 bytes of that encoding.
 
 This is an encoding identity, not yet a proof of semantic equivalence between differently structured programs.
 
-## 20. Reference implementation
+## 21. Reference implementation
 
 The Python implementation under `src/apl` is the executable reference for the current draft. Tests under `tests/` form a growing conformance suite.
 
-## 21. Deliberately absent
+## 22. Deliberately absent
 
 Not yet defined:
 
@@ -1003,6 +1144,7 @@ Not yet defined:
 - algebraic data types;
 - trap recovery, handlers, and resumable exceptions;
 - general predicate-backed refinement types and reusable type invariants;
+- unit registries, aliases, scaling/conversion tables, and affine units;
 - live filesystem/network adapters and database capability semantics;
 - file/network/database access;
 - concurrency;
