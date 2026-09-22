@@ -18,7 +18,7 @@ Canonical APL semantic IR
       |
       +--> reference interpreter
       |
-      +--> deterministic lowerer --> normalized CFG LIR --> optimizer --> backend --> native/WASM/accelerator target
+      +--> deterministic lowerer --> normalized CFG LIR --> verified optimizer --> backend --> native/WASM/accelerator target
       |
       +--> human explanation / audit projection
 ```
@@ -38,7 +38,7 @@ The optimizer and compiler are not allowed to define new meaning. They must pres
 - `docs/`: language principles, normative draft specification, architecture and roadmap.
 - `src/apl/verify.py`: structural, SSA and type verification.
 - `src/apl/canonical.py`: deterministic canonical representation and identity.
-- `src/apl/lir.py`: deterministic semantic-IR → normalized CFG LIR lowering plus independent LIR verification.
+- `src/apl/lir.py`: deterministic semantic-IR → normalized CFG LIR lowering plus independent LIR verification.\n- `src/apl/optimize.py`: deterministic verified LIR optimization with trap/resource-accounting preservation.
 - `src/apl/interpreter.py`: reference execution semantics.
 - `src/apl/cli.py`: developer-facing bootstrap CLI.
 - `examples/`: executable APL programs.
