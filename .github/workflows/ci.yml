@@ -46,6 +46,7 @@ jobs:
           apl verify examples/quantities.apl
           apl verify examples/invariants.apl
           apl verify examples/invariants_fail.apl
+          apl verify examples/semantic_primitives.apl
       - name: Lower and verify normalized compiler LIR
         run: |
           for example in \
@@ -62,7 +63,8 @@ jobs:
             contracts \
             ranges \
             quantities \
-            invariants
+            invariants \
+            semantic_primitives
           do
             apl lower "examples/$example.apl" > "/tmp/$example.lir.json"
             apl verify-lir "/tmp/$example.lir.json"
@@ -373,6 +375,33 @@ jobs:
             }
             if (invariantFailed !== 8) {
               throw new Error(`expected invariant trap 8, got ${invariantFailed}`);
+            }
+          });
+          NODE
+
+      - name: Verify content-addressed semantic primitives
+        run: |
+          primitive_id="$(apl primitive-id examples/primitive_square_plus_one.json)"
+          test "$primitive_id" = 'p_52aa7914c68bf4fa400731478171b5a56d16ffb5b5d18b819e8f4c26416e860c'
+          output="$(apl run examples/semantic_primitives.apl)"
+          test "$output" = '[return i64] 37'
+          apl compile-wasm examples/semantic_primitives.apl /tmp/semantic_primitives.wasm
+          node - <<'NODE'
+          const fs = require("fs");
+          const imports = {
+            apl: {
+              trap(code) {
+                throw new Error(`APL WASM trap ${code}`);
+              }
+            }
+          };
+          WebAssembly.instantiate(
+            fs.readFileSync("/tmp/semantic_primitives.wasm"),
+            imports
+          ).then(({instance}) => {
+            const value = instance.exports.apl_entry();
+            if (value !== 37n) {
+              throw new Error(`expected primitive result 37n, got ${value}`);
             }
           });
           NODE
