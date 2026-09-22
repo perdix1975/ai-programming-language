@@ -437,15 +437,29 @@ class _FunctionCompiler:
             + _local_set(dest)
         )
 
-    def _string_equality(self, op: dict[str, Any]) -> bytes:
-        if self.scratch_i32_index is None:
-            raise CompilationError("string equality scratch local is unavailable")
-        a, b = op["args"]
-        dest = self._index(op["id"])
-        scratch = self.scratch_i32_index
+    def _scratch(self, depth: int) -> int:
+        if depth >= len(self.scratch_i32_indices):
+            raise CompilationError(
+                f"structural equality nesting depth {depth} exceeds reserved scratch locals"
+            )
+        return self.scratch_i32_indices[depth]
 
-        len_a = self._arg(a) + _op(0x28, _memarg(2, 0))
-        len_b = self._arg(b) + _op(0x28, _memarg(2, 0))
+    def _load_expr(self, base: bytes, typ: Any, offset: int = 0) -> bytes:
+        wasm_type = _value_type(typ)
+        if wasm_type == WASM_I64:
+            return base + _op(0x29, _memarg(3, offset))
+        return base + _op(0x28, _memarg(2, offset))
+
+    def _string_equality_expr(
+        self,
+        a: bytes,
+        b: bytes,
+        dest: int,
+        depth: int,
+    ) -> bytes:
+        scratch = self._scratch(depth)
+        len_a = a + _op(0x28, _memarg(2, 0))
+        len_b = b + _op(0x28, _memarg(2, 0))
         lengths_equal = len_a + len_b + _op(0x46)
 
         init = (
@@ -454,63 +468,152 @@ class _FunctionCompiler:
             + _op(0x41, _sleb(0, 32))
             + _local_set(scratch)
         )
-
-        finished = (
-            _local_get(scratch)
-            + len_a
-            + _op(0x4F)
-        )
-
+        finished = _local_get(scratch) + len_a + _op(0x4F)
         byte_a = (
-            self._arg(a)
+            a
             + _op(0x41, _sleb(4, 32), 0x6A)
             + _local_get(scratch)
             + _op(0x6A, 0x2D, _memarg(0, 0))
         )
         byte_b = (
-            self._arg(b)
+            b
             + _op(0x41, _sleb(4, 32), 0x6A)
             + _local_get(scratch)
             + _op(0x6A, 0x2D, _memarg(0, 0))
         )
-        mismatch_body = (
+        mismatch = (
             _op(0x41, _sleb(0, 32))
             + _local_set(dest)
             + _op(0x0C, _u32(2))
-        )
-        compare = _guard_if(byte_a + byte_b + _op(0x47), mismatch_body)
-        increment = (
-            _local_get(scratch)
-            + _op(0x41, _sleb(1, 32), 0x6A)
-            + _local_set(scratch)
-            + _op(0x0C, _u32(0))
         )
         loop = (
             _op(0x02, 0x40)
             + _op(0x03, 0x40)
             + finished
             + _op(0x0D, _u32(1))
-            + compare
-            + increment
+            + _guard_if(byte_a + byte_b + _op(0x47), mismatch)
+            + _local_get(scratch)
+            + _op(0x41, _sleb(1, 32), 0x6A)
+            + _local_set(scratch)
+            + _op(0x0C, _u32(0))
             + _op(0x0B)
             + _op(0x0B)
         )
-        equal_body = init + loop
-        different_body = _op(0x41, _sleb(0, 32)) + _local_set(dest)
-        return _if_else(lengths_equal, equal_body, different_body)
+        different = _op(0x41, _sleb(0, 32)) + _local_set(dest)
+        return _if_else(lengths_equal, init + loop, different)
+
+    def _array_equality_expr(
+        self,
+        typ: Any,
+        a: bytes,
+        b: bytes,
+        dest: int,
+        depth: int,
+    ) -> bytes:
+        scratch = self._scratch(depth)
+        element_type = typ["array"]
+        length = typ["len"]
+        slot_size = _storage_size(element_type)
+
+        def element(base: bytes) -> bytes:
+            address = (
+                base
+                + _local_get(scratch)
+                + _op(0x41, _sleb(slot_size, 32), 0x6C, 0x6A)
+            )
+            return self._load_expr(address, element_type)
+
+        nested = self._equality_expr(
+            element_type,
+            element(a),
+            element(b),
+            dest,
+            depth + 1,
+        )
+        return (
+            _op(0x41, _sleb(1, 32))
+            + _local_set(dest)
+            + _op(0x41, _sleb(0, 32))
+            + _local_set(scratch)
+            + _op(0x02, 0x40)
+            + _op(0x03, 0x40)
+            + _local_get(scratch)
+            + _op(0x41, _sleb(length, 32), 0x4F)
+            + _op(0x0D, _u32(1))
+            + nested
+            + _local_get(dest)
+            + _op(0x45, 0x0D, _u32(1))
+            + _local_get(scratch)
+            + _op(0x41, _sleb(1, 32), 0x6A)
+            + _local_set(scratch)
+            + _op(0x0C, _u32(0))
+            + _op(0x0B)
+            + _op(0x0B)
+        )
+
+    def _record_equality_expr(
+        self,
+        typ: Any,
+        a: bytes,
+        b: bytes,
+        dest: int,
+        depth: int,
+    ) -> bytes:
+        layout = _record_layout(typ)
+        code = bytearray(
+            _op(0x41, _sleb(1, 32))
+            + _local_set(dest)
+            + _op(0x02, 0x40)
+        )
+        for field in sorted(layout):
+            offset, field_type = layout[field]
+            code.extend(
+                self._equality_expr(
+                    field_type,
+                    self._load_expr(a, field_type, offset),
+                    self._load_expr(b, field_type, offset),
+                    dest,
+                    depth,
+                )
+            )
+            code.extend(_local_get(dest) + _op(0x45, 0x0D, _u32(0)))
+        code.extend(_op(0x0B))
+        return bytes(code)
+
+    def _equality_expr(
+        self,
+        typ: Any,
+        a: bytes,
+        b: bytes,
+        dest: int,
+        depth: int = 0,
+    ) -> bytes:
+        if typ == "string":
+            return self._string_equality_expr(a, b, dest, depth)
+        if _is_array_type(typ):
+            return self._array_equality_expr(typ, a, b, dest, depth)
+        if _is_record_type(typ):
+            return self._record_equality_expr(typ, a, b, dest, depth)
+
+        wasm_type = _value_type(typ)
+        opcode = 0x51 if wasm_type == WASM_I64 else 0x46
+        return a + b + _op(opcode) + _local_set(dest)
 
     def _value_comparison(self, op: dict[str, Any]) -> bytes:
         a, b = op["args"]
         dest = self._index(op["id"])
         typ = self.types[a]
         name = op["op"]
-        if typ == "string":
+        if _is_memory_type(typ):
             if name != "value.eq":
-                raise CompilationError("WASM strings support equality only")
-            return self._string_equality(op)
-        if _is_aggregate_type(typ):
-            raise CompilationError(
-                "WASM aggregate structural equality is not implemented yet"
+                raise CompilationError(
+                    "WASM memory-backed values support equality only"
+                )
+            return self._equality_expr(
+                typ,
+                self._arg(a),
+                self._arg(b),
+                dest,
             )
         wasm_type = _value_type(typ)
         if name == "value.eq":
