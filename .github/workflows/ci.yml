@@ -143,6 +143,7 @@ jobs:
           apl compile-wasm examples/wasm_string_eq.apl /tmp/wasm_string_eq.wasm
           apl compile-wasm examples/effects.apl /tmp/effects.wasm
           apl compile-wasm examples/host_io.apl /tmp/host_io.wasm
+          apl compile-wasm examples/trap.apl /tmp/application_trap.wasm
           apl compile-wasm examples/wasm_output_limit_fail.apl /tmp/wasm_output_limit_fail.wasm
           apl compile-wasm examples/wasm_host_read_limit_fail.apl /tmp/wasm_host_read_limit_fail.wasm
           node - <<'NODE'
@@ -196,6 +197,22 @@ jobs:
             }
             if (host.state.output.join("\n") !== "local fixture\nnetwork fixture") {
               throw new Error(`unexpected host output: ${host.state.output}`);
+            }
+
+            const explicitTrap = await instantiateAplWasm(
+              "/tmp/application_trap.wasm"
+            );
+            try {
+              explicitTrap.instance.exports.apl_entry();
+              throw new Error("expected application trap");
+            } catch (err) {
+              if (
+                err.aplCode !== "app.demo"
+                || err.aplMessage !== "demonstration trap"
+                || err.aplWhere !== "main[0]"
+              ) {
+                throw err;
+              }
             }
 
             const denied = await instantiateAplWasm("/tmp/effects.wasm");
