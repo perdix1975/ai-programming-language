@@ -43,6 +43,7 @@ jobs:
           apl verify examples/contracts_fail.apl
           apl verify examples/ranges.apl
           apl verify examples/ranges_fail.apl
+          apl verify examples/quantities.apl
       - name: Run successful examples
         run: |
           output="$(apl run examples/hello.apl)"
@@ -63,6 +64,8 @@ jobs:
           test "$output" = $'local fixture\nnetwork fixture\n[return string] local fixture'
           output="$(apl run examples/limits.apl)"
           test "$output" = '[return i64] 42'
+          output="$(apl run examples/quantities.apl)"
+          test "$output" = '[return i64] 5'
           output="$(apl run examples/contracts.apl)"
           test "$output" = '[return i64] 6'
           output="$(apl run examples/ranges.apl)"
