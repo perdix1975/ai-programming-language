@@ -2395,3 +2395,18 @@ def test_range_type_survives_if_and_repeat_regions():
     verify_program(p)
     result = run_program(p, output=lambda _: None)
     assert result.value == 3
+
+
+
+def test_range_bounds_are_inclusive():
+    for value in (0, 100):
+        result = run_program(range_program(value=value), output=lambda _: None)
+        assert result.value == value
+
+    for value in (-1, 101):
+        try:
+            run_program(range_program(value=value), output=lambda _: None)
+        except ExecutionError as exc:
+            assert exc.code == "apl.range_violation"
+        else:
+            raise AssertionError(f"expected range violation for {value}")
