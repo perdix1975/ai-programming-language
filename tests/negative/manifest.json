@@ -226,5 +226,41 @@
     "contains": [
       "quantity.attach source must have type 'i64'"
     ]
+  },
+  {
+    "file": "v013_invariant_gate.apl",
+    "contains": [
+      "invariant declarations require APL 0.0.14"
+    ]
+  },
+  {
+    "file": "v014_missing_invariants.apl",
+    "contains": [
+      "invariants must be a list"
+    ]
+  },
+  {
+    "file": "v014_duplicate_invariant.apl",
+    "contains": [
+      "duplicate invariant 'positive'"
+    ]
+  },
+  {
+    "file": "v014_invariant_nonbool.apl",
+    "contains": [
+      "invariant predicate must have type 'bool'"
+    ]
+  },
+  {
+    "file": "v014_invariant_check_type.apl",
+    "contains": [
+      "invariant arg 0 expects 'i64', got 'bool'"
+    ]
+  },
+  {
+    "file": "v014_invariant_definition_call.apl",
+    "contains": [
+      "unknown invariant 'positive'"
+    ]
   }
 ]
