@@ -4,6 +4,7 @@ from apl.host import DeterministicHost
 from apl.interpreter import run_program
 from apl.lir import lower_hash, lower_program, verify_lir
 from apl.optimize import optimize_lir, optimize_program
+from apl.primitives import lower_primitives, primitive_function_name, primitive_id
 from apl.resources import ResourceLimits
 from apl.verify import verify_program
 from apl.wasm import WASM_MAGIC_VERSION, compile_program_to_wasm
@@ -3695,3 +3696,219 @@ def test_lir_optimizer_folds_constant_cfg_choice_without_removing_blocks():
     assert len(optimized["functions"][0]["blocks"]) == len(
         lowered["functions"][0]["blocks"]
     )
+
+
+
+PRIMITIVE_SQUARE_PLUS_ONE_ID = "p_52aa7914c68bf4fa400731478171b5a56d16ffb5b5d18b819e8f4c26416e860c"
+
+
+def square_plus_one_primitive(include_id=True):
+    primitive = {
+        "params": [{"name": "x", "type": "i64"}],
+        "returns": "i64",
+        "body": [
+            {"op": "const", "id": "one", "type": "i64", "value": 1},
+            {"op": "mul", "id": "square", "type": "i64", "args": ["x", "x"]},
+            {"op": "add", "id": "result", "type": "i64", "args": ["square", "one"]},
+            {"op": "return", "value": "result"},
+        ],
+    }
+    if include_id:
+        primitive["id"] = PRIMITIVE_SQUARE_PLUS_ONE_ID
+    return primitive
+
+
+def semantic_primitive_program():
+    return {
+        "apl": "0.0.15",
+        "module": "semantic_primitives",
+        "capabilities": [],
+        "limits": {"steps": 64, "output_lines": 0, "host_reads": 0},
+        "invariants": [],
+        "primitives": [square_plus_one_primitive()],
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "effects": [],
+            "requires": [],
+            "ensures": [],
+            "body": [
+                {"op": "const", "id": "x", "type": "i64", "value": 6},
+                {
+                    "op": "primitive.call",
+                    "id": "answer",
+                    "type": "i64",
+                    "primitive": PRIMITIVE_SQUARE_PLUS_ONE_ID,
+                    "args": ["x"],
+                },
+                {"op": "return", "value": "answer"},
+            ],
+        }],
+    }
+
+
+def test_v015_semantic_primitive_id_is_content_addressed():
+    definition = square_plus_one_primitive(include_id=False)
+    assert primitive_id(definition) == PRIMITIVE_SQUARE_PLUS_ONE_ID
+    changed = square_plus_one_primitive(include_id=False)
+    changed["body"][0]["value"] = 2
+    assert primitive_id(changed) != PRIMITIVE_SQUARE_PLUS_ONE_ID
+
+
+def test_v015_semantic_primitive_verifies_executes_and_lowers_to_core_call():
+    program = semantic_primitive_program()
+    verify_program(program)
+    assert run_program(program, output=lambda _: None).value == 37
+
+    expanded = lower_primitives(program)
+    assert "primitives" not in expanded
+    hidden_name = primitive_function_name(PRIMITIVE_SQUARE_PLUS_ONE_ID)
+    assert any(fn["name"] == hidden_name for fn in expanded["functions"])
+    main = next(fn for fn in expanded["functions"] if fn["name"] == "main")
+    call = main["body"][1]
+    assert call["op"] == "call"
+    assert call["function"] == hidden_name
+
+    lir = lower_program(program)
+    assert all(
+        op.get("op") != "primitive.call"
+        for fn in lir["functions"]
+        for block in fn["blocks"]
+        for op in block["ops"]
+    )
+    assert compile_program_to_wasm(program).binary.startswith(WASM_MAGIC_VERSION)
+
+
+def test_v015_rejects_primitive_id_content_mismatch():
+    program = semantic_primitive_program()
+    program["primitives"][0]["body"][0]["value"] = 2
+    try:
+        verify_program(program)
+    except VerificationError as exc:
+        assert "primitive id does not match canonical semantic content" in str(exc)
+        assert "expected 'p_" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_v015_rejects_unknown_primitive_call():
+    program = semantic_primitive_program()
+    program["functions"][0]["body"][1]["primitive"] = "p_" + "0" * 64
+    try:
+        verify_program(program)
+    except VerificationError as exc:
+        assert "unknown semantic primitive" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_v015_rejects_function_or_primitive_calls_inside_primitive_body():
+    for forbidden in ("call", "primitive.call"):
+        program = semantic_primitive_program()
+        definition = program["primitives"][0]
+        if forbidden == "call":
+            definition["body"] = [
+                {
+                    "op": "call",
+                    "id": "x2",
+                    "type": "i64",
+                    "function": "main",
+                    "args": [],
+                },
+                {"op": "return", "value": "x2"},
+            ]
+        else:
+            definition["body"] = [
+                {
+                    "op": "primitive.call",
+                    "id": "x2",
+                    "type": "i64",
+                    "primitive": definition["id"],
+                    "args": ["x"],
+                },
+                {"op": "return", "value": "x2"},
+            ]
+        definition["id"] = primitive_id(definition)
+        program["functions"][0]["body"][1]["primitive"] = definition["id"]
+        try:
+            verify_program(program)
+        except VerificationError as exc:
+            assert "semantic primitive bodies cannot call functions or primitives" in str(exc)
+        else:
+            raise AssertionError("expected VerificationError")
+
+
+def test_v015_semantic_primitives_are_pure():
+    program = semantic_primitive_program()
+    definition = program["primitives"][0]
+    definition["body"] = [
+        {"op": "print", "args": ["x"]},
+        {"op": "return", "value": "x"},
+    ]
+    definition["id"] = primitive_id(definition)
+    program["functions"][0]["body"][1]["primitive"] = definition["id"]
+    try:
+        verify_program(program)
+    except VerificationError as exc:
+        assert "declared effects [] do not match inferred effects ['console.write']" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_v015_primitive_call_uses_core_signature_type_and_arity_checks():
+    program = semantic_primitive_program()
+    program["functions"][0]["body"][1]["args"] = []
+    try:
+        verify_program(program)
+    except VerificationError as exc:
+        assert "expects 1 args, got 0" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+    program = semantic_primitive_program()
+    program["functions"][0]["body"][1]["type"] = "bool"
+    try:
+        verify_program(program)
+    except VerificationError as exc:
+        assert "call result type must be 'i64'" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_pre_v015_rejects_primitive_declarations():
+    program = invariant_program()
+    program["apl"] = "0.0.14"
+    program["primitives"] = []
+    try:
+        verify_program(program)
+    except VerificationError as exc:
+        assert "semantic primitive declarations require APL 0.0.15" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_v015_requires_explicit_primitive_list():
+    program = semantic_primitive_program()
+    del program["primitives"]
+    try:
+        verify_program(program)
+    except VerificationError as exc:
+        assert "primitives must be a list" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_v015_reserves_generated_primitive_function_namespace():
+    program = semantic_primitive_program()
+    program["functions"][0]["name"] = primitive_function_name(
+        PRIMITIVE_SQUARE_PLUS_ONE_ID
+    )
+    program["entry"] = program["functions"][0]["name"]
+    try:
+        verify_program(program)
+    except VerificationError as exc:
+        assert "function names beginning with '__apl_primitive_' are reserved" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
