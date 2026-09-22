@@ -785,7 +785,13 @@ def compile_lir_to_wasm(lir: dict[str, Any]) -> WasmArtifact:
         string_constants
     )
 
-    needs_memory = bool(string_constants) or needs_fs or needs_net or any(
+    needs_memory = (
+        bool(string_constants)
+        or needs_fs
+        or needs_net
+        or needs_string_eq
+        or "string" in console_types
+        or any(
         fn["returns"] == "string"
         or any(param["type"] == "string" for param in fn["params"])
         or any(
@@ -800,6 +806,7 @@ def compile_lir_to_wasm(lir: dict[str, Any]) -> WasmArtifact:
             if "type" in op
         )
         for fn in functions
+        )
     )
 
     capabilities = runtime["capabilities"]
