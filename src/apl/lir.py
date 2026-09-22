@@ -6,6 +6,7 @@ from typing import Any
 from . import SUPPORTED_LANGUAGE_VERSIONS
 from .canonical import semantic_hash
 from .errors import VerificationError
+from .primitives import lower_primitives
 from .quantities import combine_quantity_types, is_quantity_type
 from .ranges import is_range_type
 from .resources import RESOURCE_LIMIT_MAXIMA
@@ -793,6 +794,7 @@ class _FunctionLowerer:
 def lower_program(program: dict[str, Any]) -> dict[str, Any]:
     """Verify and deterministically lower semantic APL IR to normalized CFG LIR."""
     verify_program(program)
+    program = lower_primitives(program)
     version = program["apl"]
     effects = _infer_effects(program)
     invariant_definitions = {
