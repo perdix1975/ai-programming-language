@@ -107,6 +107,15 @@ async function instantiateAplWasm(path, options = {}) {
       string_eq(left, right) {
         return decodeString(left) === decodeString(right) ? 1 : 0;
       },
+      application_trap(codeHandle, messageHandle, whereHandle) {
+        const error = new Error(
+          `APL_APPLICATION_TRAP:${decodeString(codeHandle)}:${decodeString(whereHandle)}:${decodeString(messageHandle)}`
+        );
+        error.aplCode = decodeString(codeHandle);
+        error.aplMessage = decodeString(messageHandle);
+        error.aplWhere = decodeString(whereHandle);
+        throw error;
+      },
       console_write_i64(value) {
         state.output.push(value.toString());
       },
