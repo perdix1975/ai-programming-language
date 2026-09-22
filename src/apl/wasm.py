@@ -322,9 +322,9 @@ class _FunctionCompiler:
 
     def compile(self) -> bytes:
         blocks = self.fn["blocks"]
-        if len(blocks) != 1 or blocks[0]["id"] != "b0" or blocks[0]["params"]:
+        if not blocks or blocks[0]["id"] != "b0" or blocks[0]["params"]:
             raise CompilationError(
-                f"{self.fn['name']}: WASM scalar backend currently requires one b0 block"
+                f"{self.fn['name']}: WASM scalar backend requires canonical b0 entry"
             )
         if self.fn["effects"]:
             raise CompilationError(
@@ -336,17 +336,46 @@ class _FunctionCompiler:
         if self.fn["returns"] != "unit":
             _value_type(self.fn["returns"])
 
-        block = blocks[0]
-        result_types: list[tuple[int, int]] = []
-        for op in block["ops"]:
-            if "id" in op:
-                typ = _value_type(op["type"])
-                result_types.append((self._index(op["id"]), typ))
+        # Current normalized LIR routes every semantic return through a final
+        # exit block. Support either a direct single-block return or exactly
+        # that canonical b0 -> exit -> return trampoline. General CFG remains
+        # deliberately unsupported in this checkpoint.
+        if len(blocks) == 1:
+            entry = blocks[0]
+            exit_block = None
+        elif len(blocks) == 2:
+            entry, exit_block = blocks
+            edge = entry["term"]
+            if (
+                edge.get("op") != "br"
+                or edge.get("target") != exit_block["id"]
+                or exit_block["ops"]
+                or exit_block["term"].get("op") != "return"
+            ):
+                raise CompilationError(
+                    f"{self.fn['name']}: WASM scalar backend does not support general CFG yet"
+                )
+        else:
+            raise CompilationError(
+                f"{self.fn['name']}: WASM scalar backend does not support general CFG yet"
+            )
+
+        local_types: list[tuple[int, int]] = []
+        for block in blocks:
+            for param in block["params"]:
+                local_types.append(
+                    (self._index(param["id"]), _value_type(param["type"]))
+                )
+            for op in block["ops"]:
+                if "id" in op:
+                    local_types.append(
+                        (self._index(op["id"]), _value_type(op["type"]))
+                    )
 
         param_count = len(self.fn["params"])
-        result_types.sort()
-        expected = list(range(param_count, param_count + len(result_types)))
-        actual = [index for index, _ in result_types]
+        local_types.sort()
+        expected = list(range(param_count, param_count + len(local_types)))
+        actual = [index for index, _ in local_types]
         if actual != expected:
             raise CompilationError(
                 f"{self.fn['name']}: scalar WASM locals are not dense after parameters"
@@ -354,13 +383,27 @@ class _FunctionCompiler:
 
         local_decls = [
             _u32(1) + bytes([typ])
-            for _, typ in result_types
+            for _, typ in local_types
         ]
         code = bytearray(_vec(local_decls))
-        for op in block["ops"]:
+        for op in entry["ops"]:
             code.extend(self.compile_op(op))
 
-        term = block["term"]
+        if exit_block is None:
+            term = entry["term"]
+        else:
+            edge = entry["term"]
+            target_params = exit_block["params"]
+            args = edge["args"]
+            if len(args) != len(target_params):
+                raise CompilationError(
+                    f"{self.fn['name']}: malformed canonical exit branch"
+                )
+            for source, target in zip(args, target_params):
+                code.extend(self._arg(source))
+                code.extend(_local_set(self._index(target["id"])))
+            term = exit_block["term"]
+
         if term["op"] != "return":
             raise CompilationError(
                 f"{self.fn['name']}: WASM scalar backend requires return terminator"
