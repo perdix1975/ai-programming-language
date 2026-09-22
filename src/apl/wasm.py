@@ -815,6 +815,29 @@ class _FunctionCompiler:
         return _u32(len(body)) + body
 
 
+def _module_needs_memory(functions: list[dict[str, Any]]) -> bool:
+    for fn in functions:
+        if any(_is_aggregate_type(param["type"]) for param in fn["params"]):
+            return True
+        if _is_aggregate_type(fn["returns"]):
+            return True
+        for block in fn["blocks"]:
+            if any(_is_aggregate_type(param["type"]) for param in block["params"]):
+                return True
+            for op in block["ops"]:
+                if _is_aggregate_type(op.get("type")):
+                    return True
+                if op.get("op") in {
+                    "array.make",
+                    "array.get",
+                    "array.len",
+                    "record.make",
+                    "record.get",
+                }:
+                    return True
+    return False
+
+
 def compile_lir_to_wasm(lir: dict[str, Any]) -> WasmArtifact:
     verify_lir(lir)
 
@@ -823,10 +846,15 @@ def compile_lir_to_wasm(lir: dict[str, Any]) -> WasmArtifact:
         raise CompilationError(
             "WASM scalar backend does not support host capabilities yet"
         )
-    step_limit = runtime["limits"]["steps"]
-    step_global_index = 0 if step_limit is not None else None
-
     functions = lir["functions"]
+    needs_memory = _module_needs_memory(functions)
+    heap_global_index = 0 if needs_memory else None
+    step_limit = runtime["limits"]["steps"]
+    step_global_index = (
+        (1 if needs_memory else 0)
+        if step_limit is not None
+        else None
+    )
     signatures = {
         fn["name"]: ([param["type"] for param in fn["params"]], fn["returns"])
         for fn in functions
@@ -868,13 +896,28 @@ def compile_lir_to_wasm(lir: dict[str, Any]) -> WasmArtifact:
     export_entry = _name("apl_entry") + bytes([0x00]) + _u32(entry_index)
     export_section = _section(7, _vec([export_entry]))
 
-    global_section = b""
+    memory_section = (
+        _section(5, _vec([bytes([0x00]) + _u32(1)]))
+        if needs_memory
+        else b""
+    )
+
+    global_entries: list[bytes] = []
+    if needs_memory:
+        global_entries.append(
+            bytes([WASM_I64, 0x01])
+            + _op(0x42, _sleb(8, 64), 0x0B)
+        )
     if step_limit is not None:
-        global_entry = (
+        global_entries.append(
             bytes([WASM_I64, 0x01])
             + _op(0x42, _sleb(step_limit, 64), 0x0B)
         )
-        global_section = _section(6, _vec([global_entry]))
+    global_section = (
+        _section(6, _vec(global_entries))
+        if global_entries
+        else b""
+    )
 
     code_entries = [
         _FunctionCompiler(
@@ -882,6 +925,7 @@ def compile_lir_to_wasm(lir: dict[str, Any]) -> WasmArtifact:
             function_indices=function_indices,
             signatures=signatures,
             step_global_index=step_global_index,
+            heap_global_index=heap_global_index,
         ).compile()
         for fn in functions
     ]
@@ -892,6 +936,7 @@ def compile_lir_to_wasm(lir: dict[str, Any]) -> WasmArtifact:
         + type_section
         + import_section
         + function_section
+        + memory_section
         + global_section
         + export_section
         + code_section
