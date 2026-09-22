@@ -68,6 +68,28 @@ jobs:
             apl verify-lir "/tmp/$example.lir.json"
           done
           test -n "$(apl lower-hash examples/invariants.apl)"
+      - name: Compile and execute WebAssembly scalar backend
+        run: |
+          apl verify examples/wasm_scalar.apl
+          apl compile-wasm examples/wasm_scalar.apl /tmp/wasm_scalar.wasm
+          node - <<'NODE'
+          const fs = require("fs");
+          const bytes = fs.readFileSync("/tmp/wasm_scalar.wasm");
+          const imports = {
+            apl: {
+              trap(code) {
+                throw new Error(`APL WASM trap ${code}`);
+              }
+            }
+          };
+          WebAssembly.instantiate(bytes, imports).then(({instance}) => {
+            const value = instance.exports.apl_entry();
+            if (value !== 42n) {
+              throw new Error(`expected 42n, got ${value}`);
+            }
+          });
+          NODE
+
       - name: Run successful examples
         run: |
           output="$(apl run examples/hello.apl)"
