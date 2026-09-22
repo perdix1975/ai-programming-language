@@ -2209,7 +2209,8 @@ def test_range_type_is_exact_in_function_signatures():
     verify_program(p)
     assert run_program(p, output=lambda _: None).value == 7
 
-    p["functions"][0]["params"][0]["type"] = range_type(0, 10)
+    p["functions"][1]["body"][1]["type"] = range_type(0, 10)
+    p["functions"][1]["body"][2]["args"] = ["bounded"]
     try:
         verify_program(p)
     except VerificationError as exc:
