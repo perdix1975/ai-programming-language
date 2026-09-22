@@ -1,0 +1,51 @@
+[
+  {"id":"hello","file":"examples/hello.apl"},
+  {"id":"functions-if","file":"examples/functions_if.apl"},
+  {"id":"arithmetic","file":"examples/arithmetic.apl"},
+  {"id":"repeat-factorial","file":"examples/repeat_factorial.apl"},
+  {"id":"arrays","file":"examples/arrays.apl"},
+  {"id":"records","file":"examples/records.apl"},
+  {"id":"contracts","file":"examples/contracts.apl"},
+  {"id":"ranges","file":"examples/ranges.apl"},
+  {"id":"quantities","file":"examples/quantities.apl"},
+  {"id":"invariants","file":"examples/invariants.apl"},
+  {"id":"string-equality","file":"examples/wasm_string_eq.apl"},
+  {"id":"structural-equality","file":"examples/wasm_struct_eq.apl"},
+
+  {"id":"effects-ok","file":"examples/effects.apl","grants":["console.write"]},
+  {"id":"effects-denied","file":"examples/effects.apl","grants":[]},
+  {
+    "id":"host-io-ok",
+    "file":"examples/host_io.apl",
+    "grants":["console.write","fs.read_text","net.get_text"],
+    "host_fixture":"examples/host_fixture.json"
+  },
+  {
+    "id":"host-unavailable",
+    "file":"examples/host_io.apl",
+    "grants":["console.write","fs.read_text","net.get_text"]
+  },
+
+  {"id":"application-trap","file":"examples/trap.apl"},
+  {"id":"overflow-add","file":"examples/wasm_overflow.apl"},
+  {"id":"overflow-mul","file":"examples/wasm_mul_overflow.apl"},
+  {"id":"division-zero","file":"examples/wasm_divzero.apl"},
+  {"id":"repeat-negative","file":"examples/wasm_repeat_negative.apl"},
+  {"id":"repeat-exceeds","file":"examples/wasm_repeat_exceeds.apl"},
+  {"id":"step-limit","file":"examples/wasm_steps_fail.apl"},
+  {
+    "id":"output-limit",
+    "file":"examples/wasm_output_limit_fail.apl",
+    "grants":["console.write"]
+  },
+  {
+    "id":"host-read-limit",
+    "file":"examples/wasm_host_read_limit_fail.apl",
+    "grants":["fs.read_text"],
+    "host_fixture":"examples/host_fixture.json"
+  },
+  {"id":"precondition-fail","file":"examples/contracts_fail.apl"},
+  {"id":"range-fail","file":"examples/ranges_fail.apl"},
+  {"id":"invariant-fail","file":"examples/invariants_fail.apl"},
+  {"id":"array-oob","file":"examples/wasm_array_oob.apl"}
+]
