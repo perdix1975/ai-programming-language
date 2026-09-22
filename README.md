@@ -29,6 +29,7 @@ The executable reference core includes:
 - structural bounded `i64` range types with explicit `range.check` refinement and `range.value` widening;
 - symbolic structural quantity types with static unit-exponent algebra and explicit attach/value conversions;
 - reusable typed module invariants for function contracts and explicit `invariant.check` assertions;
+- deterministic normalized compiler LIR 0.1 with explicit CFG/block parameters, source-step ticks, independent verification, and stable lower hashes;
 - static rejection of direct and mutual recursion in Draft 0.0.2;
 - strict verifier;
 - deterministic canonical encoding and SHA-256 identity;
@@ -98,6 +99,11 @@ apl run examples/invariants_fail.apl
 
 apl canonicalize examples/invariants.apl
 apl hash examples/invariants.apl
+
+apl lower examples/invariants.apl
+apl lower-hash examples/invariants.apl
+# save 'apl lower' output, then:
+apl verify-lir program.lir.json
 ```
 
 ## Why the IR looks like this
@@ -110,7 +116,7 @@ Human-friendly surface syntax can be added later, but it will lower into the sam
 
 - [Language principles](docs/LANGUAGE_PRINCIPLES.md)
 - [Draft v0 specification](docs/SPEC_v0.md)
-- [Architecture](docs/ARCHITECTURE.md)
+- [Architecture](docs/ARCHITECTURE.md)\n- [Normalized compiler LIR 0.1](docs/LIR_v0.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Conformance testing](docs/CONFORMANCE.md)
 
@@ -131,7 +137,7 @@ APL semantic IR
     +--> optimizer --> WASM/native/accelerator backend
 ```
 
-M3 is complete: contracts, bounded `i64` ranges, symbolic quantity algebra, and reusable machine-checkable invariants are implemented. The next milestone is M4: normalized lower IR and the compiler path.
+M3 is complete. M4 is underway: normalized CFG LIR 0.1 and its independent verifier are implemented; the next compiler-path checkpoint is the WASM backend.
 
 ## License
 
