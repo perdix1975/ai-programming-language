@@ -3552,10 +3552,7 @@ def test_wasm_backend_rejects_observable_effects_until_host_abi_exists():
         raise AssertionError("expected backend compilation failure")
 
 
-def test_wasm_backend_rejects_multi_block_cfg_until_structured_backend_exists():
-    try:
-        compile_program_to_wasm(functions_if_program())
-    except CompilationError as exc:
-        assert "general CFG" in str(exc)
-    else:
-        raise AssertionError("expected backend compilation failure")
+def test_wasm_backend_compiles_verified_multi_block_cfg():
+    artifact = compile_program_to_wasm(functions_if_program())
+    assert artifact.binary.startswith(WASM_MAGIC_VERSION)
+    assert artifact.entry_export == "apl_entry"
