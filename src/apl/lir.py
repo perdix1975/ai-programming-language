@@ -466,7 +466,7 @@ class _FunctionLowerer:
             continuation=continuation,
             repeat_backedge=(
                 outer_env,
-                body_index,
+                ins["index"],
                 header,
                 header_env,
             ),
@@ -669,7 +669,7 @@ class _FunctionLowerer:
         continuation: tuple[_Block, dict[str, tuple[str, Any]]] | None = None,
         repeat_backedge: tuple[
             dict[str, tuple[str, Any]],
-            tuple[str, Any],
+            str,
             _Block,
             dict[str, tuple[str, Any]],
         ] | None = None,
@@ -694,13 +694,13 @@ class _FunctionLowerer:
                     return
 
                 if repeat_backedge is not None:
-                    outer_env, index_value, header, _ = repeat_backedge
+                    outer_env, index_name, header, _ = repeat_backedge
                     yielded = env[ins["value"]]
                     one = self._emit_value("const", "i64", value=1)
                     next_index = self._emit_value(
                         "i64.add",
                         "i64",
-                        args=[index_value[0], one[0]],
+                        args=[env[index_name][0], one[0]],
                     )
                     back_args = [
                         env[name]
@@ -1170,8 +1170,11 @@ def _verify_lir_op(
         return _verify_result_id(op, where), result_type
 
     if name in {"value.eq", "value.lt", "value.le", "value.gt", "value.ge"}:
+        expected_fields = {"op", "id", "type", "args"}
+        if "where" in op:
+            expected_fields.add("where")
         _expect(
-            set(op) == {"op", "id", "type", "args"},
+            set(op) == expected_fields,
             f"{where}: {name} fields invalid",
         )
         args = op["args"]
