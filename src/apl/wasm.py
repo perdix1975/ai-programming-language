@@ -614,8 +614,20 @@ class _FunctionCompiler:
             return code + _op(0x0F)
 
         if op == "trap":
-            raise CompilationError(
-                f"{self.fn['name']}: explicit LIR traps are not supported by the WASM ABI yet"
+            try:
+                code_handle = self.string_handles[term["code"]]
+                message_handle = self.string_handles[term["message"]]
+                where_handle = self.string_handles[term["where"]]
+            except KeyError as exc:
+                raise CompilationError(
+                    f"{self.fn['name']}: missing explicit-trap string in WASM pool"
+                ) from exc
+            return (
+                _op(0x42, _sleb(code_handle, 64))
+                + _op(0x42, _sleb(message_handle, 64))
+                + _op(0x42, _sleb(where_handle, 64))
+                + _call(self.import_indices["application_trap"])
+                + _op(0x00)
             )
 
         raise CompilationError(
@@ -713,12 +725,13 @@ def _function_value_types(fn: dict[str, Any]) -> dict[str, Any]:
 
 def _collect_runtime_needs(
     lir: dict[str, Any],
-) -> tuple[set[str], set[str], bool, bool, bool]:
+) -> tuple[set[str], set[str], bool, bool, bool, bool]:
     string_constants: set[str] = set()
     console_types: set[str] = set()
     needs_string_eq = False
     needs_fs = False
     needs_net = False
+    needs_application_trap = False
 
     for fn in lir["functions"]:
         types = _function_value_types(fn)
@@ -736,12 +749,20 @@ def _collect_runtime_needs(
                 elif name == "host.net.get_text":
                     needs_net = True
 
+            term = block["term"]
+            if term["op"] == "trap":
+                needs_application_trap = True
+                string_constants.update(
+                    (term["code"], term["message"], term["where"])
+                )
+
     return (
         string_constants,
         console_types,
         needs_string_eq,
         needs_fs,
         needs_net,
+        needs_application_trap,
     )
 
 
@@ -780,6 +801,7 @@ def compile_lir_to_wasm(lir: dict[str, Any]) -> WasmArtifact:
         needs_string_eq,
         needs_fs,
         needs_net,
+        needs_application_trap,
     ) = _collect_runtime_needs(lir)
     string_handles, string_segments, static_end = _build_string_pool(
         string_constants
@@ -790,6 +812,7 @@ def compile_lir_to_wasm(lir: dict[str, Any]) -> WasmArtifact:
         or needs_fs
         or needs_net
         or needs_string_eq
+        or needs_application_trap
         or "string" in console_types
         or any(
         fn["returns"] == "string"
@@ -826,6 +849,10 @@ def compile_lir_to_wasm(lir: dict[str, Any]) -> WasmArtifact:
         import_specs.append(("require_capabilities", ["bool"], "unit"))
     if needs_string_eq:
         import_specs.append(("string_eq", ["string", "string"], "bool"))
+    if needs_application_trap:
+        import_specs.append(
+            ("application_trap", ["string", "string", "string"], "unit")
+        )
     for typ, import_name in (
         ("i64", "console_write_i64"),
         ("bool", "console_write_bool"),
