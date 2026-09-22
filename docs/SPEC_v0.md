@@ -773,7 +773,7 @@ Draft 0.0.11 defines:
 | Operator | Arity | Operand rule | Result |
 |---|---:|---|---|
 | `eq` | 2 | identical non-`unit` types | `bool` |
-| `lt`, `le`, `gt`, `ge` | 2 | both `i64` | `bool` |
+| `lt`, `le`, `gt`, `ge` | 2 | both `i64`; from 0.0.12, also identical range types | `bool` |
 | `not` | 1 | `bool` | `bool` |
 | `and`, `or` | 2 | both `bool` | `bool` |
 
@@ -971,6 +971,7 @@ A conforming verifier rejects at least:
 - recursive call cycles;
 - malformed, ill-typed, or out-of-scope function contract predicates;
 - duplicate function-local contract identifiers;
+- malformed or out-of-bounds range descriptors and invalid explicit range conversions;
 - use of an operation before the language version that introduced it.
 
 Execution is defined only for verified programs.
