@@ -72,6 +72,7 @@ jobs:
         run: |
           apl verify examples/wasm_scalar.apl
           apl compile-wasm examples/wasm_scalar.apl /tmp/wasm_scalar.wasm
+          apl compile-wasm examples/wasm_mul.apl /tmp/wasm_mul.wasm
           node - <<'NODE'
           const fs = require("fs");
           const bytes = fs.readFileSync("/tmp/wasm_scalar.wasm");
@@ -82,10 +83,22 @@ jobs:
               }
             }
           };
-          WebAssembly.instantiate(bytes, imports).then(({instance}) => {
-            const value = instance.exports.apl_entry();
-            if (value !== 42n) {
-              throw new Error(`expected 42n, got ${value}`);
+          async function run(path) {
+            const {instance} = await WebAssembly.instantiate(
+              fs.readFileSync(path),
+              imports
+            );
+            return instance.exports.apl_entry();
+          }
+          Promise.all([
+            run("/tmp/wasm_scalar.wasm"),
+            run("/tmp/wasm_mul.wasm")
+          ]).then(([addValue, mulValue]) => {
+            if (addValue !== 42n) {
+              throw new Error(`expected add 42n, got ${addValue}`);
+            }
+            if (mulValue !== 42n) {
+              throw new Error(`expected mul 42n, got ${mulValue}`);
             }
           });
           NODE
@@ -93,6 +106,7 @@ jobs:
       - name: Enforce WebAssembly scalar trap ABI
         run: |
           apl compile-wasm examples/wasm_overflow.apl /tmp/wasm_overflow.wasm
+          apl compile-wasm examples/wasm_mul_overflow.apl /tmp/wasm_mul_overflow.wasm
           apl compile-wasm examples/wasm_divzero.apl /tmp/wasm_divzero.wasm
           node - <<'NODE'
           const fs = require("fs");
@@ -120,10 +134,14 @@ jobs:
           }
           Promise.all([
             trapCode("/tmp/wasm_overflow.wasm"),
+            trapCode("/tmp/wasm_mul_overflow.wasm"),
             trapCode("/tmp/wasm_divzero.wasm")
-          ]).then(([overflow, divzero]) => {
+          ]).then(([overflow, mulOverflow, divzero]) => {
             if (overflow !== 1) {
               throw new Error(`expected overflow trap 1, got ${overflow}`);
+            }
+            if (mulOverflow !== 1) {
+              throw new Error(`expected mul overflow trap 1, got ${mulOverflow}`);
             }
             if (divzero !== 2) {
               throw new Error(`expected divzero trap 2, got ${divzero}`);
