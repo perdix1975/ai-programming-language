@@ -30,7 +30,7 @@ The executable reference core includes:
 - symbolic structural quantity types with static unit-exponent algebra and explicit attach/value conversions;
 - reusable typed module invariants for function contracts and explicit `invariant.check` assertions;
 - deterministic normalized compiler LIR 0.1 with explicit CFG/block parameters, source-step ticks, independent verification, and stable lower hashes;
-- a real WebAssembly 1.0 backend for verified scalar CFGs, checked arithmetic, calls, `if`, bounded `repeat`, step budgets, contracts/invariants, ranges and quantities;
+- a real WebAssembly 1.0 backend covering checked arithmetic, calls, CFG control, bounded `repeat`, UTF-8 strings, immutable arrays/records, host effects, all resource budgets, contracts/invariants, ranges, quantities and diagnostic-preserving application traps;
 - static rejection of direct and mutual recursion in Draft 0.0.2;
 - strict verifier;
 - deterministic canonical encoding and SHA-256 identity;
@@ -142,7 +142,7 @@ APL semantic IR
     +--> normalized CFG LIR --> optimizer --> WASM/native/accelerator backend
 ```
 
-M3 is complete. M4 is underway: normalized CFG LIR 0.1 and an executable WebAssembly backend now cover scalar arithmetic, calls, structured control, step budgets, contracts/invariants, ranges and quantities. Structured data, strings, host effects and full trap diagnostics remain.
+M3 is complete. The core M4 compiler path is now executable through normalized CFG LIR 0.1 and WebAssembly across the current APL semantic surface. The remaining M4 checkpoints are systematic interpreter-vs-compiled differential testing and optimization-equivalence testing.
 
 ## License
 
