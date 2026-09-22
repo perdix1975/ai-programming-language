@@ -3556,3 +3556,34 @@ def test_wasm_backend_compiles_verified_multi_block_cfg():
     artifact = compile_program_to_wasm(functions_if_program())
     assert artifact.binary.startswith(WASM_MAGIC_VERSION)
     assert artifact.entry_export == "apl_entry"
+
+
+
+def aggregate_equality_program():
+    array_type = {"array": "i64", "len": 1}
+    return {
+        "apl": "0.0.5",
+        "module": "aggregate_equality",
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "bool",
+            "body": [
+                {"op": "const", "id": "x", "type": "i64", "value": 1},
+                {"op": "array", "id": "a", "type": array_type, "args": ["x"]},
+                {"op": "array", "id": "b", "type": array_type, "args": ["x"]},
+                {"op": "eq", "id": "same", "type": "bool", "args": ["a", "b"]},
+                {"op": "return", "value": "same"},
+            ],
+        }],
+    }
+
+
+def test_wasm_backend_never_uses_pointer_equality_for_aggregates():
+    try:
+        compile_program_to_wasm(aggregate_equality_program())
+    except CompilationError as exc:
+        assert "structural equality" in str(exc)
+    else:
+        raise AssertionError("expected aggregate structural equality rejection")
