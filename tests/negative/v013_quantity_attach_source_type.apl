@@ -1,0 +1,23 @@
+{
+  "apl":"0.0.13",
+  "module":"v013_quantity_attach_source_type",
+  "capabilities":[],
+  "limits":{"steps":10,"output_lines":0,"host_reads":0},
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"i64",
+      "effects":[],
+      "requires":[],
+      "ensures":[],
+      "body":[
+        {"op":"const","id":"raw","type":"bool","value":true},
+        {"op":"quantity.attach","id":"q","type":{"quantity":{"m":1}},"args":["raw"]},
+        {"op":"quantity.value","id":"wide","type":"i64","args":["q"]},
+        {"op":"return","value":"wide"}
+      ]
+    }
+  ]
+}

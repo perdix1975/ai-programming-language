@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from .errors import ExecutionError, VerificationError
+from .quantities import is_quantity_type
 from .ranges import is_range_type
 from .resources import ExecutionBudget
 
@@ -113,11 +114,15 @@ def _predicate_type(
     if op in {"lt", "le", "gt", "ge"}:
         same_integer_type = (
             arg_types[0] == arg_types[1]
-            and (arg_types[0] == "i64" or is_range_type(arg_types[0]))
+            and (
+                arg_types[0] == "i64"
+                or is_range_type(arg_types[0])
+                or is_quantity_type(arg_types[0])
+            )
         )
         _expect(
             same_integer_type,
-            f"{where}: {op} requires identical i64 or range args",
+            f"{where}: {op} requires identical i64, range, or quantity args",
         )
         return "bool"
     if op == "not":

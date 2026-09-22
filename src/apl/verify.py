@@ -7,11 +7,18 @@ from typing import Any
 from . import SUPPORTED_LANGUAGE_VERSIONS
 from .contracts import verify_function_contracts
 from .errors import VerificationError
+from .quantities import (
+    MAX_UNIT_EXPONENT,
+    MAX_UNIT_TERMS,
+    UNIT_SYMBOL_RE,
+    combine_quantity_types,
+    is_quantity_type,
+)
 from .ranges import I64_MAX, I64_MIN, is_range_type
 from .resources import RESOURCE_LIMIT_MAXIMA
 
 SUPPORTED_TYPES = {"i64", "bool", "string", "unit"}
-VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4, "0.0.5": 5, "0.0.6": 6, "0.0.7": 7, "0.0.8": 8, "0.0.9": 9, "0.0.10": 10, "0.0.11": 11, "0.0.12": 12}
+VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4, "0.0.5": 5, "0.0.6": 6, "0.0.7": 7, "0.0.8": 8, "0.0.9": 9, "0.0.10": 10, "0.0.11": 11, "0.0.12": 12, "0.0.13": 13}
 MAX_REPEAT_BOUND = 1_000_000
 MAX_ARRAY_LENGTH = 65_536
 MAX_RECORD_FIELDS = 256
@@ -85,6 +92,32 @@ def _validate_type(raw: Any, version: str, where: str) -> None:
 
     _expect(isinstance(raw, dict),
             f"{where}: type must be a primitive name or structured descriptor")
+
+    if set(raw) == {"quantity"}:
+        _expect(_supports(version, 13),
+                f"{where}: quantity types require APL 0.0.13")
+        units = raw.get("quantity")
+        _expect(isinstance(units, dict),
+                f"{where}: quantity descriptor must be an object")
+        _expect(
+            len(units) <= MAX_UNIT_TERMS,
+            f"{where}: quantity may contain at most {MAX_UNIT_TERMS} unit terms",
+        )
+        for symbol, exponent in units.items():
+            _expect(
+                isinstance(symbol, str) and UNIT_SYMBOL_RE.fullmatch(symbol) is not None,
+                f"{where}: invalid unit symbol '{symbol}'",
+            )
+            _expect(
+                isinstance(exponent, int) and not isinstance(exponent, bool),
+                f"{where}: unit exponent for '{symbol}' must be an integer",
+            )
+            _expect(
+                exponent != 0 and -MAX_UNIT_EXPONENT <= exponent <= MAX_UNIT_EXPONENT,
+                f"{where}: unit exponent for '{symbol}' must be in "
+                f"[-{MAX_UNIT_EXPONENT}, {MAX_UNIT_EXPONENT}] excluding 0",
+            )
+        return
 
     if set(raw) == {"range"}:
         _expect(_supports(version, 12),
@@ -394,6 +427,18 @@ def _verify_sequence(
         elif op == "range.value":
             _expect(_supports(version, 12), f"{where}: range.value requires APL 0.0.12")
             _verify_range_value(ins, env, where)
+        elif op == "quantity.attach":
+            _expect(_supports(version, 13), f"{where}: quantity.attach requires APL 0.0.13")
+            _verify_quantity_attach(ins, env, version, where)
+        elif op == "quantity.value":
+            _expect(_supports(version, 13), f"{where}: quantity.value requires APL 0.0.13")
+            _verify_quantity_value(ins, env, where)
+        elif op in {"quantity.add", "quantity.sub"}:
+            _expect(_supports(version, 13), f"{where}: {op} requires APL 0.0.13")
+            _verify_quantity_add_sub(ins, env, where, op)
+        elif op in {"quantity.mul", "quantity.div"}:
+            _expect(_supports(version, 13), f"{where}: {op} requires APL 0.0.13")
+            _verify_quantity_mul_div(ins, env, version, where, op)
         elif op == "fs.read_text":
             _expect(_supports(version, 9), f"{where}: fs.read_text requires APL 0.0.9")
             _verify_host_text_read(ins, env, where, "fs.read_text")
@@ -655,6 +700,76 @@ def _verify_array_len(
     _expect(_is_array_type(array_type),
             f"{where}: array.len arg must be an array")
     _bind_result(ins, env, "i64", where)
+
+
+def _verify_quantity_attach(
+    ins: dict[str, Any],
+    env: dict[str, Any],
+    version: str,
+    where: str,
+) -> None:
+    typ = ins.get("type")
+    _validate_type(typ, version, f"{where}: quantity.attach result type")
+    _expect(is_quantity_type(typ), f"{where}: quantity.attach requires a quantity result type")
+    args = ins.get("args")
+    _expect(
+        isinstance(args, list) and len(args) == 1 and isinstance(args[0], str),
+        f"{where}: quantity.attach requires exactly one i64 SSA id",
+    )
+    _expect(
+        _value_type(args[0], env, where) == "i64",
+        f"{where}: quantity.attach source must have type 'i64'",
+    )
+    _bind_result(ins, env, typ, where)
+
+
+def _verify_quantity_value(
+    ins: dict[str, Any],
+    env: dict[str, Any],
+    where: str,
+) -> None:
+    args = ins.get("args")
+    _expect(
+        isinstance(args, list) and len(args) == 1 and isinstance(args[0], str),
+        f"{where}: quantity.value requires exactly one quantity SSA id",
+    )
+    source_type = _value_type(args[0], env, where)
+    _expect(is_quantity_type(source_type), f"{where}: quantity.value source must be a quantity")
+    _bind_result(ins, env, "i64", where)
+
+
+def _verify_quantity_add_sub(
+    ins: dict[str, Any],
+    env: dict[str, Any],
+    where: str,
+    op: str,
+) -> None:
+    left, right = _binary_args(ins, env, where)
+    _expect(
+        is_quantity_type(left) and left == right,
+        f"{where}: {op} requires identical quantity operand types",
+    )
+    _bind_result(ins, env, left, where)
+
+
+def _verify_quantity_mul_div(
+    ins: dict[str, Any],
+    env: dict[str, Any],
+    version: str,
+    where: str,
+    op: str,
+) -> None:
+    left, right = _binary_args(ins, env, where)
+    _expect(
+        is_quantity_type(left) and is_quantity_type(right),
+        f"{where}: {op} requires quantity operands",
+    )
+    try:
+        inferred = combine_quantity_types(left, right, divide=op == "quantity.div")
+    except ValueError as exc:
+        _fail(f"{where}: {exc}")
+    _validate_type(inferred, version, f"{where}: derived quantity type")
+    _bind_result(ins, env, inferred, where)
 
 
 def _verify_range_check(

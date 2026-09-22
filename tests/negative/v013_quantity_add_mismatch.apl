@@ -1,0 +1,26 @@
+{
+  "apl":"0.0.13",
+  "module":"v013_quantity_add_mismatch",
+  "capabilities":[],
+  "limits":{"steps":20,"output_lines":0,"host_reads":0},
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"i64",
+      "effects":[],
+      "requires":[],
+      "ensures":[],
+      "body":[
+        {"op":"const","id":"a0","type":"i64","value":1},
+        {"op":"const","id":"b0","type":"i64","value":2},
+        {"op":"quantity.attach","id":"a","type":{"quantity":{"m":1}},"args":["a0"]},
+        {"op":"quantity.attach","id":"b","type":{"quantity":{"s":1}},"args":["b0"]},
+        {"op":"quantity.add","id":"bad","type":{"quantity":{"m":1}},"args":["a","b"]},
+        {"op":"quantity.value","id":"wide","type":"i64","args":["bad"]},
+        {"op":"return","value":"wide"}
+      ]
+    }
+  ]
+}

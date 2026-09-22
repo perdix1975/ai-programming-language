@@ -256,6 +256,27 @@ def _execute_sequence(
             source = ins["args"][0]
             env[ins["id"]] = env[source]
             types[ins["id"]] = "i64"
+        elif op == "quantity.attach":
+            source = ins["args"][0]
+            env[ins["id"]] = env[source]
+            types[ins["id"]] = ins["type"]
+        elif op == "quantity.value":
+            source = ins["args"][0]
+            env[ins["id"]] = env[source]
+            types[ins["id"]] = "i64"
+        elif op in {"quantity.add", "quantity.sub", "quantity.mul"}:
+            a, b = (env[x] for x in ins["args"])
+            raw = (
+                a + b if op == "quantity.add"
+                else a - b if op == "quantity.sub"
+                else a * b
+            )
+            env[ins["id"]] = _i64(raw, where)
+            types[ins["id"]] = ins["type"]
+        elif op == "quantity.div":
+            a, b = (env[x] for x in ins["args"])
+            env[ins["id"]] = _trunc_div(a, b, where)
+            types[ins["id"]] = ins["type"]
         elif op in {"fs.read_text", "net.get_text"}:
             required_capability = op
             if enforce_capabilities and required_capability not in capabilities:

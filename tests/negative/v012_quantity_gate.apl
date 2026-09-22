@@ -1,0 +1,30 @@
+{
+  "apl":"0.0.12",
+  "module":"v012_quantity_gate",
+  "capabilities":[],
+  "limits":{"steps":10,"output_lines":0,"host_reads":0},
+  "entry":"main",
+  "functions":[
+    {
+      "name":"identity_quantity",
+      "params":[{"name":"x","type":{"quantity":{"m":1}}}],
+      "returns":{"quantity":{"m":1}},
+      "effects":[],
+      "requires":[],
+      "ensures":[],
+      "body":[{"op":"return","value":"x"}]
+    },
+    {
+      "name":"main",
+      "params":[],
+      "returns":"i64",
+      "effects":[],
+      "requires":[],
+      "ensures":[],
+      "body":[
+        {"op":"const","id":"answer","type":"i64","value":42},
+        {"op":"return","value":"answer"}
+      ]
+    }
+  ]
+}

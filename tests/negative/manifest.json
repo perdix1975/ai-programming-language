@@ -196,5 +196,35 @@
     "contains": [
       "range.value source must be a range"
     ]
+  },
+  {
+    "file": "v012_quantity_gate.apl",
+    "contains": [
+      "quantity types require APL 0.0.13"
+    ]
+  },
+  {
+    "file": "v013_invalid_unit_symbol.apl",
+    "contains": [
+      "invalid unit symbol 'M'"
+    ]
+  },
+  {
+    "file": "v013_zero_unit_exponent.apl",
+    "contains": [
+      "unit exponent for 'm' must be in [-16, 16] excluding 0"
+    ]
+  },
+  {
+    "file": "v013_quantity_add_mismatch.apl",
+    "contains": [
+      "quantity.add requires identical quantity operand types"
+    ]
+  },
+  {
+    "file": "v013_quantity_attach_source_type.apl",
+    "contains": [
+      "quantity.attach source must have type 'i64'"
+    ]
   }
 ]

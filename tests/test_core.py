@@ -2340,7 +2340,7 @@ def test_contract_ordered_comparison_rejects_range_vs_i64():
     try:
         verify_program(p)
     except VerificationError as exc:
-        assert "requires identical i64 or range args" in str(exc)
+        assert "requires identical i64, range, or quantity args" in str(exc)
     else:
         raise AssertionError("expected VerificationError")
 
@@ -2410,3 +2410,440 @@ def test_range_bounds_are_inclusive():
             assert exc.code == "apl.range_violation"
         else:
             raise AssertionError(f"expected range violation for {value}")
+
+
+
+def quantity_type(**units):
+    return {"quantity": units}
+
+
+def quantity_program(value=12, units=None):
+    units = units or {"m": 1}
+    typ = {"quantity": units}
+    return {
+        "apl": "0.0.13",
+        "module": "quantities",
+        "capabilities": [],
+        "limits": {"steps": 50, "output_lines": 0, "host_reads": 0},
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "effects": [],
+            "requires": [],
+            "ensures": [],
+            "body": [
+                {"op": "const", "id": "raw", "type": "i64", "value": value},
+                {"op": "quantity.attach", "id": "q", "type": typ, "args": ["raw"]},
+                {"op": "quantity.value", "id": "wide", "type": "i64", "args": ["q"]},
+                {"op": "return", "value": "wide"},
+            ],
+        }],
+    }
+
+
+def test_v013_quantity_attach_and_value():
+    p = quantity_program()
+    verify_program(p)
+    result = run_program(p, output=lambda _: None)
+    assert result.value == 12
+
+
+def test_quantity_add_and_sub_require_identical_units():
+    meters = quantity_type(m=1)
+    p = {
+        "apl": "0.0.13",
+        "module": "quantity_add",
+        "capabilities": [],
+        "limits": {"steps": 100, "output_lines": 0, "host_reads": 0},
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "effects": [],
+            "requires": [],
+            "ensures": [],
+            "body": [
+                {"op": "const", "id": "a0", "type": "i64", "value": 8},
+                {"op": "const", "id": "b0", "type": "i64", "value": 3},
+                {"op": "quantity.attach", "id": "a", "type": meters, "args": ["a0"]},
+                {"op": "quantity.attach", "id": "b", "type": meters, "args": ["b0"]},
+                {"op": "quantity.add", "id": "sum", "type": meters, "args": ["a", "b"]},
+                {"op": "quantity.sub", "id": "diff", "type": meters, "args": ["sum", "b"]},
+                {"op": "quantity.value", "id": "wide", "type": "i64", "args": ["diff"]},
+                {"op": "return", "value": "wide"},
+            ],
+        }],
+    }
+    verify_program(p)
+    assert run_program(p, output=lambda _: None).value == 8
+
+    seconds = quantity_type(s=1)
+    p["functions"][0]["body"][3]["type"] = seconds
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "quantity.add requires identical quantity operand types" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_quantity_division_derives_velocity_units():
+    meters = quantity_type(m=1)
+    seconds = quantity_type(s=1)
+    velocity = quantity_type(m=1, s=-1)
+    p = {
+        "apl": "0.0.13",
+        "module": "quantity_velocity",
+        "capabilities": [],
+        "limits": {"steps": 100, "output_lines": 0, "host_reads": 0},
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "effects": [],
+            "requires": [],
+            "ensures": [],
+            "body": [
+                {"op": "const", "id": "d0", "type": "i64", "value": 10},
+                {"op": "const", "id": "t0", "type": "i64", "value": 2},
+                {"op": "quantity.attach", "id": "d", "type": meters, "args": ["d0"]},
+                {"op": "quantity.attach", "id": "t", "type": seconds, "args": ["t0"]},
+                {"op": "quantity.div", "id": "v", "type": velocity, "args": ["d", "t"]},
+                {"op": "quantity.value", "id": "wide", "type": "i64", "args": ["v"]},
+                {"op": "return", "value": "wide"},
+            ],
+        }],
+    }
+    verify_program(p)
+    assert run_program(p, output=lambda _: None).value == 5
+
+
+def test_quantity_multiplication_cancels_units():
+    velocity = quantity_type(m=1, s=-1)
+    seconds = quantity_type(s=1)
+    meters = quantity_type(m=1)
+    p = {
+        "apl": "0.0.13",
+        "module": "quantity_cancel",
+        "capabilities": [],
+        "limits": {"steps": 100, "output_lines": 0, "host_reads": 0},
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "effects": [],
+            "requires": [],
+            "ensures": [],
+            "body": [
+                {"op": "const", "id": "v0", "type": "i64", "value": 5},
+                {"op": "const", "id": "t0", "type": "i64", "value": 3},
+                {"op": "quantity.attach", "id": "v", "type": velocity, "args": ["v0"]},
+                {"op": "quantity.attach", "id": "t", "type": seconds, "args": ["t0"]},
+                {"op": "quantity.mul", "id": "d", "type": meters, "args": ["v", "t"]},
+                {"op": "quantity.value", "id": "wide", "type": "i64", "args": ["d"]},
+                {"op": "return", "value": "wide"},
+            ],
+        }],
+    }
+    verify_program(p)
+    assert run_program(p, output=lambda _: None).value == 15
+
+
+def test_quantity_division_can_produce_dimensionless_quantity():
+    meters = quantity_type(m=1)
+    dimensionless = quantity_type()
+    p = {
+        "apl": "0.0.13",
+        "module": "quantity_dimensionless",
+        "capabilities": [],
+        "limits": {"steps": 100, "output_lines": 0, "host_reads": 0},
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "effects": [],
+            "requires": [],
+            "ensures": [],
+            "body": [
+                {"op": "const", "id": "a0", "type": "i64", "value": 10},
+                {"op": "const", "id": "b0", "type": "i64", "value": 2},
+                {"op": "quantity.attach", "id": "a", "type": meters, "args": ["a0"]},
+                {"op": "quantity.attach", "id": "b", "type": meters, "args": ["b0"]},
+                {
+                    "op": "quantity.div",
+                    "id": "ratio",
+                    "type": dimensionless,
+                    "args": ["a", "b"],
+                },
+                {"op": "quantity.value", "id": "wide", "type": "i64", "args": ["ratio"]},
+                {"op": "return", "value": "wide"},
+            ],
+        }],
+    }
+    verify_program(p)
+    assert run_program(p, output=lambda _: None).value == 5
+
+
+def test_quantity_mul_declared_type_must_match_derived_units():
+    p = quantity_program()
+    fn = p["functions"][0]
+    meters = quantity_type(m=1)
+    seconds = quantity_type(s=1)
+    fn["body"] = [
+        {"op": "const", "id": "a0", "type": "i64", "value": 2},
+        {"op": "const", "id": "b0", "type": "i64", "value": 3},
+        {"op": "quantity.attach", "id": "a", "type": meters, "args": ["a0"]},
+        {"op": "quantity.attach", "id": "b", "type": seconds, "args": ["b0"]},
+        {"op": "quantity.mul", "id": "bad", "type": meters, "args": ["a", "b"]},
+        {"op": "quantity.value", "id": "wide", "type": "i64", "args": ["bad"]},
+        {"op": "return", "value": "wide"},
+    ]
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "declared type" in str(exc)
+        assert "does not match inferred" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_quantity_descriptor_validation():
+    invalid = [
+        quantity_type(M=1),
+        quantity_type(m=0),
+        quantity_type(m=17),
+        {"quantity": {f"u{i}": 1 for i in range(17)}},
+    ]
+    fragments = [
+        "invalid unit symbol 'M'",
+        "unit exponent for 'm' must be in [-16, 16] excluding 0",
+        "unit exponent for 'm' must be in [-16, 16] excluding 0",
+        "quantity may contain at most 16 unit terms",
+    ]
+    for typ, fragment in zip(invalid, fragments):
+        p = quantity_program()
+        p["functions"][0]["body"][1]["type"] = typ
+        try:
+            verify_program(p)
+        except VerificationError as exc:
+            assert fragment in str(exc)
+        else:
+            raise AssertionError(f"expected VerificationError for {typ!r}")
+
+
+def test_quantity_derived_exponent_limit_is_checked():
+    p = quantity_program()
+    fn = p["functions"][0]
+    m16 = quantity_type(m=16)
+    m1 = quantity_type(m=1)
+    fn["body"] = [
+        {"op": "const", "id": "a0", "type": "i64", "value": 2},
+        {"op": "const", "id": "b0", "type": "i64", "value": 3},
+        {"op": "quantity.attach", "id": "a", "type": m16, "args": ["a0"]},
+        {"op": "quantity.attach", "id": "b", "type": m1, "args": ["b0"]},
+        {"op": "quantity.mul", "id": "bad", "type": m16, "args": ["a", "b"]},
+        {"op": "return", "value": "a0"},
+    ]
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "derived exponent for unit 'm' exceeds [-16, 16]" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_v012_rejects_quantity_types():
+    p = limited_pure_program()
+    p["apl"] = "0.0.12"
+    p["functions"].insert(
+        0,
+        {
+            "name": "identity_quantity",
+            "params": [{"name": "x", "type": quantity_type(m=1)}],
+            "returns": quantity_type(m=1),
+            "effects": [],
+            "requires": [],
+            "ensures": [],
+            "body": [{"op": "return", "value": "x"}],
+        },
+    )
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "quantity types require APL 0.0.13" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_quantity_attach_and_value_require_explicit_types():
+    p = quantity_program()
+    p["functions"][0]["body"][0] = {
+        "op": "const",
+        "id": "raw",
+        "type": "bool",
+        "value": True,
+    }
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "quantity.attach source must have type 'i64'" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+    p = quantity_program()
+    p["functions"][0]["body"][2]["args"] = ["raw"]
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "quantity.value source must be a quantity" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_plain_i64_arithmetic_rejects_quantities():
+    p = quantity_program()
+    p["functions"][0]["body"].insert(
+        2,
+        {"op": "add", "id": "bad", "type": "i64", "args": ["q", "q"]},
+    )
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "arithmetic requires i64 operands" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_quantity_arithmetic_reuses_i64_traps():
+    meters = quantity_type(m=1)
+    p = {
+        "apl": "0.0.13",
+        "module": "quantity_overflow",
+        "capabilities": [],
+        "limits": {"steps": 50, "output_lines": 0, "host_reads": 0},
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": meters,
+            "effects": [],
+            "requires": [],
+            "ensures": [],
+            "body": [
+                {"op": "const", "id": "a0", "type": "i64", "value": 2**63 - 1},
+                {"op": "const", "id": "b0", "type": "i64", "value": 1},
+                {"op": "quantity.attach", "id": "a", "type": meters, "args": ["a0"]},
+                {"op": "quantity.attach", "id": "b", "type": meters, "args": ["b0"]},
+                {"op": "quantity.add", "id": "sum", "type": meters, "args": ["a", "b"]},
+                {"op": "return", "value": "sum"},
+            ],
+        }],
+    }
+    try:
+        run_program(p, output=lambda _: None)
+    except ExecutionError as exc:
+        assert exc.code == "apl.i64_overflow"
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_quantity_division_reuses_division_by_zero_trap():
+    meters = quantity_type(m=1)
+    seconds = quantity_type(s=1)
+    velocity = quantity_type(m=1, s=-1)
+    p = {
+        "apl": "0.0.13",
+        "module": "quantity_div_zero",
+        "capabilities": [],
+        "limits": {"steps": 50, "output_lines": 0, "host_reads": 0},
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": velocity,
+            "effects": [],
+            "requires": [],
+            "ensures": [],
+            "body": [
+                {"op": "const", "id": "d0", "type": "i64", "value": 10},
+                {"op": "const", "id": "t0", "type": "i64", "value": 0},
+                {"op": "quantity.attach", "id": "d", "type": meters, "args": ["d0"]},
+                {"op": "quantity.attach", "id": "t", "type": seconds, "args": ["t0"]},
+                {"op": "quantity.div", "id": "v", "type": velocity, "args": ["d", "t"]},
+                {"op": "return", "value": "v"},
+            ],
+        }],
+    }
+    try:
+        run_program(p, output=lambda _: None)
+    except ExecutionError as exc:
+        assert exc.code == "apl.division_by_zero"
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_contract_ordered_comparison_accepts_identical_quantity_types():
+    meters = quantity_type(m=1)
+    p = {
+        "apl": "0.0.13",
+        "module": "quantity_contract",
+        "capabilities": [],
+        "limits": {"steps": 100, "output_lines": 0, "host_reads": 0},
+        "entry": "main",
+        "functions": [
+            {
+                "name": "ordered",
+                "params": [
+                    {"name": "low", "type": meters},
+                    {"name": "high", "type": meters},
+                ],
+                "returns": meters,
+                "effects": [],
+                "requires": [
+                    contract_clause(
+                        "ordered",
+                        "low must not exceed high",
+                        predicate("le", var("low"), var("high")),
+                    )
+                ],
+                "ensures": [],
+                "body": [{"op": "return", "value": "high"}],
+            },
+            {
+                "name": "main",
+                "params": [],
+                "returns": "i64",
+                "effects": [],
+                "requires": [],
+                "ensures": [],
+                "body": [
+                    {"op": "const", "id": "a0", "type": "i64", "value": 2},
+                    {"op": "const", "id": "b0", "type": "i64", "value": 8},
+                    {"op": "quantity.attach", "id": "a", "type": meters, "args": ["a0"]},
+                    {"op": "quantity.attach", "id": "b", "type": meters, "args": ["b0"]},
+                    {
+                        "op": "call",
+                        "id": "answer",
+                        "type": meters,
+                        "function": "ordered",
+                        "args": ["a", "b"],
+                    },
+                    {
+                        "op": "quantity.value",
+                        "id": "wide",
+                        "type": "i64",
+                        "args": ["answer"],
+                    },
+                    {"op": "return", "value": "wide"},
+                ],
+            },
+        ],
+    }
+    verify_program(p)
+    assert run_program(p, output=lambda _: None).value == 8

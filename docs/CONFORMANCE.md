@@ -51,6 +51,8 @@ The initial corpus covers:
 - missing Draft 0.0.11 contract lists;
 - invalid contract result scope, predicate typing, and duplicate contract identifiers;
 - pre-0.0.12 range-type use;
-- invalid range bounds and invalid explicit range conversion operands.
+- invalid range bounds and invalid explicit range conversion operands;
+- pre-0.0.13 quantity-type use;
+- invalid unit symbols/exponents and incompatible quantity arithmetic.
 
 The corpus should grow whenever a verifier bug, ambiguity, or new language rule is introduced.
