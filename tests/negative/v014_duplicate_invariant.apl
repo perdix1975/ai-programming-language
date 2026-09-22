@@ -1,0 +1,35 @@
+{
+  "apl":"0.0.14",
+  "module":"v014_duplicate_invariant",
+  "capabilities":[],
+  "limits":{"steps":20,"output_lines":0,"host_reads":0},
+  "invariants":[
+    {
+      "name":"positive",
+      "params":[{"name":"x","type":"i64"}],
+      "message":"first",
+      "predicate":{"op":"gt","args":[{"var":"x"},{"const":{"type":"i64","value":0}}]}
+    },
+    {
+      "name":"positive",
+      "params":[{"name":"x","type":"i64"}],
+      "message":"second",
+      "predicate":{"op":"gt","args":[{"var":"x"},{"const":{"type":"i64","value":0}}]}
+    }
+  ],
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"i64",
+      "effects":[],
+      "requires":[],
+      "ensures":[],
+      "body":[
+        {"op":"const","id":"answer","type":"i64","value":42},
+        {"op":"return","value":"answer"}
+      ]
+    }
+  ]
+}
