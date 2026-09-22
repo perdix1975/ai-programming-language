@@ -38,7 +38,7 @@ The optimizer and compiler are not allowed to define new meaning. They must pres
 - `docs/`: language principles, normative draft specification, architecture and roadmap.
 - `src/apl/verify.py`: structural, SSA and type verification.
 - `src/apl/canonical.py`: deterministic canonical representation and identity.
-- `src/apl/lir.py`: deterministic semantic-IR → normalized CFG LIR lowering plus independent LIR verification.
+- `src/apl/primitives.py`: content-addressed semantic primitive identity and deterministic primitive → core-function lowering.\n- `src/apl/lir.py`: deterministic semantic-IR → normalized CFG LIR lowering plus independent LIR verification.
 - `src/apl/interpreter.py`: reference execution semantics.
 - `src/apl/cli.py`: developer-facing bootstrap CLI.
 - `examples/`: executable APL programs.
@@ -56,7 +56,7 @@ The next architectural layers are:
 6. normalized CFG lower IR (implemented as LIR 0.1);\n7. compact/binary LIR encoding and WASM/native backend;
 8. optimizer with semantics-preserving transformations;
 9. declarative constraint/search subsystem;
-10. machine-generated reusable primitives;
+10. content-addressed machine-generated reusable primitives (initial pure mechanism implemented in Draft 0.0.15);
 11. profile-guided and learned target optimization.
 
 The Python implementation is a bootstrap reference, not a permanent performance dependency.
