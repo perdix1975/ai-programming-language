@@ -1,0 +1,18 @@
+{
+  "apl":"0.0.11",
+  "module":"v011_range_gate",
+  "capabilities":[],
+  "limits":{"steps":10,"output_lines":0,"host_reads":0},
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[{"name":"x","type":{"range":{"min":0,"max":10}}}],
+      "returns":"i64",
+      "effects":[],
+      "requires":[],
+      "ensures":[],
+      "body":[{"op":"return","value":"x"}]
+    }
+  ]
+}
