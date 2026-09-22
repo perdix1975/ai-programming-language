@@ -49,8 +49,26 @@ async function execute(path, item) {
   }
 }
 
+function canonical(value) {
+  if (Array.isArray(value)) {
+    return value.map(canonical);
+  }
+  if (value && typeof value === "object") {
+    const result = {};
+    for (const key of Object.keys(value).sort()) {
+      result[key] = canonical(value[key]);
+    }
+    return result;
+  }
+  return value;
+}
+
+function stableJson(value) {
+  return JSON.stringify(canonical(value));
+}
+
 function same(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return stableJson(left) === stableJson(right);
 }
 
 async function main() {
@@ -68,22 +86,22 @@ async function main() {
     if (!same(baseline, item.expected)) {
       throw new Error(
         `differential mismatch [${item.id}] baseline\n`
-        + `expected=${JSON.stringify(item.expected)}\n`
-        + `actual=${JSON.stringify(baseline)}`
+        + `expected=${stableJson(item.expected)}\n`
+        + `actual=${stableJson(baseline)}`
       );
     }
     if (!same(optimized, item.expected)) {
       throw new Error(
         `optimization mismatch [${item.id}] optimized\n`
-        + `expected=${JSON.stringify(item.expected)}\n`
-        + `actual=${JSON.stringify(optimized)}`
+        + `expected=${stableJson(item.expected)}\n`
+        + `actual=${stableJson(optimized)}`
       );
     }
     if (!same(optimized, baseline)) {
       throw new Error(
         `baseline/optimized mismatch [${item.id}]\n`
-        + `baseline=${JSON.stringify(baseline)}\n`
-        + `optimized=${JSON.stringify(optimized)}`
+        + `baseline=${stableJson(baseline)}\n`
+        + `optimized=${stableJson(optimized)}`
       );
     }
     checked += 1;
