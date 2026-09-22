@@ -377,6 +377,14 @@ jobs:
           });
           NODE
 
+      - name: Verify optimizer and interpreter-WASM differential equivalence
+        run: |
+          apl optimize examples/wasm_scalar.apl > /tmp/wasm_scalar.optimized.lir.json
+          apl verify-lir /tmp/wasm_scalar.optimized.lir.json
+          apl optimize-lir /tmp/wasm_scalar.optimized.lir.json > /tmp/wasm_scalar.optimized2.lir.json
+          cmp /tmp/wasm_scalar.optimized.lir.json /tmp/wasm_scalar.optimized2.lir.json
+          python tests/run_differential.py
+
       - name: Run successful examples
         run: |
           output="$(apl run examples/hello.apl)"

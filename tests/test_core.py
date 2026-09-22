@@ -3,6 +3,7 @@ from apl.errors import CompilationError, ExecutionError, VerificationError
 from apl.host import DeterministicHost
 from apl.interpreter import run_program
 from apl.lir import lower_hash, lower_program, verify_lir
+from apl.optimize import optimize_lir, optimize_program
 from apl.resources import ResourceLimits
 from apl.verify import verify_program
 from apl.wasm import WASM_MAGIC_VERSION, compile_program_to_wasm
@@ -3576,3 +3577,121 @@ def test_wasm_backend_compiles_verified_multi_block_cfg():
     artifact = compile_program_to_wasm(functions_if_program())
     assert artifact.binary.startswith(WASM_MAGIC_VERSION)
     assert artifact.entry_export == "apl_entry"
+
+
+
+def test_lir_optimizer_is_deterministic_idempotent_and_verified():
+    source = wasm_scalar_program()
+    lowered = lower_program(source)
+    first = optimize_lir(lowered)
+    second = optimize_lir(lowered)
+    third = optimize_lir(first)
+    verify_lir(first)
+    assert first == second
+    assert first == third
+
+
+def test_lir_optimizer_folds_safe_checked_arithmetic_but_keeps_step_ticks():
+    lowered = lower_program(wasm_scalar_program())
+    before_steps = sum(
+        1
+        for fn in lowered["functions"]
+        for block in fn["blocks"]
+        for op in block["ops"]
+        if op["op"] == "budget.step"
+    )
+    optimized = optimize_lir(lowered)
+    after_steps = sum(
+        1
+        for fn in optimized["functions"]
+        for block in fn["blocks"]
+        for op in block["ops"]
+        if op["op"] == "budget.step"
+    )
+    assert before_steps == after_steps
+    assert any(
+        op.get("op") == "const"
+        and op.get("id") == "v2"
+        and op.get("value") == 42
+        for block in optimized["functions"][0]["blocks"]
+        for op in block["ops"]
+    )
+
+
+def test_lir_optimizer_does_not_fold_trapping_division_or_overflow():
+    divzero = {
+        "apl": "0.0.3",
+        "module": "opt_divzero",
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "body": [
+                {"op": "const", "id": "a", "type": "i64", "value": 7},
+                {"op": "const", "id": "b", "type": "i64", "value": 0},
+                {"op": "div", "id": "x", "type": "i64", "args": ["a", "b"]},
+                {"op": "return", "value": "x"},
+            ],
+        }],
+    }
+    overflow = {
+        "apl": "0.0.1",
+        "module": "opt_overflow",
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "body": [
+                {"op": "const", "id": "a", "type": "i64", "value": 9223372036854775807},
+                {"op": "const", "id": "b", "type": "i64", "value": 1},
+                {"op": "add", "id": "x", "type": "i64", "args": ["a", "b"]},
+                {"op": "return", "value": "x"},
+            ],
+        }],
+    }
+
+    for program, expected_op in ((divzero, "i64.div"), (overflow, "i64.add")):
+        optimized = optimize_program(program)
+        assert any(
+            op.get("op") == expected_op
+            for block in optimized["functions"][0]["blocks"]
+            for op in block["ops"]
+        )
+
+
+def test_lir_optimizer_folds_constant_cfg_choice_without_removing_blocks():
+    program = {
+        "apl": "0.0.2",
+        "module": "opt_branch",
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "body": [
+                {"op": "const", "id": "flag", "type": "bool", "value": True},
+                {"op": "const", "id": "a", "type": "i64", "value": 42},
+                {"op": "const", "id": "b", "type": "i64", "value": 7},
+                {
+                    "op": "if",
+                    "id": "selected",
+                    "type": "i64",
+                    "cond": "flag",
+                    "then": [{"op": "yield", "value": "a"}],
+                    "else": [{"op": "yield", "value": "b"}],
+                },
+                {"op": "return", "value": "selected"},
+            ],
+        }],
+    }
+    lowered = lower_program(program)
+    optimized = optimize_lir(lowered)
+    assert any(
+        block["term"]["op"] == "br"
+        for block in optimized["functions"][0]["blocks"]
+    )
+    assert len(optimized["functions"][0]["blocks"]) == len(
+        lowered["functions"][0]["blocks"]
+    )

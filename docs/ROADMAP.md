@@ -52,8 +52,8 @@
   - [x] contract/invariant guards plus range/quantity scalar lowering
   - [x] UTF-8 strings, immutable arrays/records, recursive structural equality and exact application-trap diagnostics
   - [x] host effects, versioned capability grants, and output/host-read budgets
-- [ ] optimization equivalence tests
-- [ ] differential testing: interpreter vs compiled output
+- [x] optimization equivalence tests
+- [x] differential testing: interpreter vs compiled output
 
 ## M5 — AI-native layer
 

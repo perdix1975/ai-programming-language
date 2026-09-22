@@ -138,6 +138,66 @@ async function instantiateAplWasm(path, options = {}) {
     throw new Error(`unsupported structural comparison type: ${JSON.stringify(type)}`);
   }
 
+  function decodeSlot(type, slot) {
+    if (type === "i64") {
+      return slotSignedI64(slot).toString();
+    }
+    if (type === "bool") {
+      return Number(slot & 0xffffffffn) !== 0;
+    }
+    if (type === "string") {
+      return decodeString(slotSignedI64(slot));
+    }
+    if (type && typeof type === "object") {
+      if ("range" in type || "quantity" in type) {
+        return slotSignedI64(slot).toString();
+      }
+      if ("array" in type || "record" in type) {
+        return decodeStructured(type, slotPointer(slot));
+      }
+    }
+    throw new Error(`unsupported differential slot type: ${JSON.stringify(type)}`);
+  }
+
+  function decodeStructured(type, pointer) {
+    if (type && typeof type === "object" && "array" in type && "len" in type) {
+      const result = [];
+      for (let index = 0; index < type.len; index += 1) {
+        result.push(decodeSlot(type.array, readSlot(pointer, index * 8)));
+      }
+      return result;
+    }
+    if (type && typeof type === "object" && "record" in type) {
+      const result = {};
+      const fields = Object.keys(type.record).sort();
+      for (let index = 0; index < fields.length; index += 1) {
+        const field = fields[index];
+        result[field] = decodeSlot(
+          type.record[field],
+          readSlot(pointer, index * 8)
+        );
+      }
+      return result;
+    }
+    throw new Error(`unsupported differential structured type: ${JSON.stringify(type)}`);
+  }
+
+  function decodeValue(type, value) {
+    if (type === "unit") return null;
+    if (type === "i64") return value.toString();
+    if (type === "bool") return value !== 0;
+    if (type === "string") return decodeString(value);
+    if (type && typeof type === "object") {
+      if ("range" in type || "quantity" in type) {
+        return value.toString();
+      }
+      if ("array" in type || "record" in type) {
+        return decodeStructured(type, value >>> 0);
+      }
+    }
+    throw new Error(`unsupported differential return type: ${JSON.stringify(type)}`);
+  }
+
   function structuralEqual(type, leftPointer, rightPointer) {
     if (type && typeof type === "object" && "array" in type && "len" in type) {
       for (let index = 0; index < type.len; index += 1) {
@@ -273,6 +333,7 @@ async function instantiateAplWasm(path, options = {}) {
     instance,
     state,
     decodeString,
+    decodeValue,
     allocateString,
   };
 }
