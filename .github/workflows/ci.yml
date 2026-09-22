@@ -83,6 +83,8 @@ jobs:
           apl compile-wasm examples/wasm_array.apl /tmp/wasm_array.wasm
           apl compile-wasm examples/wasm_record.apl /tmp/wasm_record.wasm
           apl compile-wasm examples/wasm_array_growth.apl /tmp/wasm_array_growth.wasm
+          apl compile-wasm examples/wasm_string_eq.apl /tmp/wasm_string_eq.wasm
+          apl compile-wasm examples/wasm_record_string.apl /tmp/wasm_record_string.wasm
           node - <<'NODE'
           const fs = require("fs");
           const bytes = fs.readFileSync("/tmp/wasm_scalar.wasm");
@@ -112,8 +114,10 @@ jobs:
             run("/tmp/invariants.wasm"),
             run("/tmp/wasm_array.wasm"),
             run("/tmp/wasm_record.wasm"),
-            run("/tmp/wasm_array_growth.wasm")
-          ]).then(([addValue, mulValue, ifValue, repeatValue, stepsValue, contractValue, rangeValue, quantityValue, invariantValue, arrayValue, recordValue, growthValue]) => {
+            run("/tmp/wasm_array_growth.wasm"),
+            run("/tmp/wasm_string_eq.wasm"),
+            run("/tmp/wasm_record_string.wasm")
+          ]).then(([addValue, mulValue, ifValue, repeatValue, stepsValue, contractValue, rangeValue, quantityValue, invariantValue, arrayValue, recordValue, growthValue, stringEqValue, recordStringValue]) => {
             if (addValue !== 42n) {
               throw new Error(`expected add 42n, got ${addValue}`);
             }
@@ -149,6 +153,12 @@ jobs:
             }
             if (growthValue !== 20n) {
               throw new Error(`expected aggregate growth result 20n, got ${growthValue}`);
+            }
+            if (stringEqValue !== 1) {
+              throw new Error(`expected UTF-8 string equality 1, got ${stringEqValue}`);
+            }
+            if (recordStringValue !== 1) {
+              throw new Error(`expected record string equality 1, got ${recordStringValue}`);
             }
           });
           NODE
