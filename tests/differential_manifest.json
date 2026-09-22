@@ -1,0 +1,165 @@
+{
+  "cases": [
+    {
+      "name": "hello",
+      "file": "examples/hello.apl"
+    },
+    {
+      "name": "functions_if",
+      "file": "examples/functions_if.apl"
+    },
+    {
+      "name": "arithmetic",
+      "file": "examples/arithmetic.apl"
+    },
+    {
+      "name": "repeat_factorial",
+      "file": "examples/repeat_factorial.apl"
+    },
+    {
+      "name": "arrays",
+      "file": "examples/arrays.apl"
+    },
+    {
+      "name": "records",
+      "file": "examples/records.apl"
+    },
+    {
+      "name": "effects_granted",
+      "file": "examples/effects.apl",
+      "grants": [
+        "console.write"
+      ]
+    },
+    {
+      "name": "host_io",
+      "file": "examples/host_io.apl",
+      "grants": [
+        "console.write",
+        "fs.read_text",
+        "net.get_text"
+      ],
+      "host_fixture": "examples/host_fixture.json"
+    },
+    {
+      "name": "limits",
+      "file": "examples/limits.apl"
+    },
+    {
+      "name": "contracts",
+      "file": "examples/contracts.apl"
+    },
+    {
+      "name": "ranges",
+      "file": "examples/ranges.apl"
+    },
+    {
+      "name": "quantities",
+      "file": "examples/quantities.apl"
+    },
+    {
+      "name": "invariants",
+      "file": "examples/invariants.apl"
+    },
+    {
+      "name": "string_eq",
+      "file": "examples/wasm_string_eq.apl"
+    },
+    {
+      "name": "struct_eq",
+      "file": "examples/wasm_struct_eq.apl"
+    },
+    {
+      "name": "struct_return",
+      "file": "examples/wasm_struct_return.apl"
+    },
+    {
+      "name": "application_trap",
+      "file": "examples/trap.apl",
+      "diagnostics": true
+    },
+    {
+      "name": "capability_denied",
+      "file": "examples/effects.apl"
+    },
+    {
+      "name": "host_unavailable",
+      "file": "examples/host_io.apl",
+      "grants": [
+        "console.write",
+        "fs.read_text",
+        "net.get_text"
+      ],
+      "host_available": false
+    },
+    {
+      "name": "host_missing",
+      "file": "examples/host_io.apl",
+      "grants": [
+        "console.write",
+        "fs.read_text",
+        "net.get_text"
+      ],
+      "host_fixture": "tests/empty_host_fixture.json"
+    },
+    {
+      "name": "output_limit",
+      "file": "examples/wasm_output_limit_fail.apl",
+      "grants": [
+        "console.write"
+      ]
+    },
+    {
+      "name": "host_read_limit",
+      "file": "examples/wasm_host_read_limit_fail.apl",
+      "grants": [
+        "fs.read_text"
+      ],
+      "host_fixture": "examples/host_fixture.json"
+    },
+    {
+      "name": "overflow",
+      "file": "examples/wasm_overflow.apl"
+    },
+    {
+      "name": "mul_overflow",
+      "file": "examples/wasm_mul_overflow.apl"
+    },
+    {
+      "name": "division_zero",
+      "file": "examples/wasm_divzero.apl"
+    },
+    {
+      "name": "repeat_negative",
+      "file": "examples/wasm_repeat_negative.apl"
+    },
+    {
+      "name": "repeat_exceeds",
+      "file": "examples/wasm_repeat_exceeds.apl"
+    },
+    {
+      "name": "steps_limit",
+      "file": "examples/wasm_steps_fail.apl"
+    },
+    {
+      "name": "precondition_fail",
+      "file": "examples/contracts_fail.apl"
+    },
+    {
+      "name": "postcondition_fail",
+      "file": "examples/wasm_postcondition_fail.apl"
+    },
+    {
+      "name": "range_fail",
+      "file": "examples/ranges_fail.apl"
+    },
+    {
+      "name": "invariant_fail",
+      "file": "examples/invariants_fail.apl"
+    },
+    {
+      "name": "array_oob",
+      "file": "examples/wasm_array_oob.apl"
+    }
+  ]
+}
