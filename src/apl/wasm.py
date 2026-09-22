@@ -80,13 +80,17 @@ def _is_aggregate_type(typ: Any) -> bool:
     return _is_array_type(typ) or _is_record_type(typ)
 
 
+def _is_memory_type(typ: Any) -> bool:
+    return typ == "string" or _is_aggregate_type(typ)
+
+
 def _value_type(typ: Any) -> int:
     if typ == "i64" or is_range_type(typ) or is_quantity_type(typ):
         return WASM_I64
-    if typ == "bool" or _is_aggregate_type(typ):
+    if typ == "bool" or _is_memory_type(typ):
         return WASM_I32
     raise CompilationError(
-        "WASM backend supports i64/bool/range/quantity/array/record values, "
+        "WASM backend supports i64/bool/string/range/quantity/array/record values, "
         f"got {typ!r}"
     )
 
@@ -426,9 +430,9 @@ class _FunctionCompiler:
         dest = self._index(op["id"])
         typ = self.types[a]
         name = op["op"]
-        if _is_aggregate_type(typ):
+        if _is_memory_type(typ):
             raise CompilationError(
-                "WASM aggregate structural equality is not implemented yet"
+                "WASM structural equality for memory-backed values is not implemented yet"
             )
         wasm_type = _value_type(typ)
         if name == "value.eq":
@@ -618,7 +622,22 @@ class _FunctionCompiler:
                 return _op(0x42, _sleb(op["value"], 64)) + _local_set(dest)
             if op["type"] == "bool":
                 return _op(0x41, _sleb(1 if op["value"] else 0, 32)) + _local_set(dest)
-            raise CompilationError("WASM scalar backend does not support string constants")
+            if op["type"] == "string":
+                encoded = op["value"].encode("utf-8")
+                code = bytearray(self._allocate(4 + len(encoded), dest))
+                code.extend(
+                    self._arg(op["id"])
+                    + _op(0x41, _sleb(len(encoded), 32))
+                    + _op(0x36, _memarg(2, 0))
+                )
+                for index, byte in enumerate(encoded):
+                    code.extend(
+                        self._arg(op["id"])
+                        + _op(0x41, _sleb(byte, 32))
+                        + _op(0x3A, _memarg(0, 4 + index))
+                    )
+                return bytes(code)
+            raise CompilationError(f"unsupported WASM constant type {op['type']!r}")
 
         if name == "i64.add":
             return self._checked_add(op)
@@ -817,15 +836,15 @@ class _FunctionCompiler:
 
 def _module_needs_memory(functions: list[dict[str, Any]]) -> bool:
     for fn in functions:
-        if any(_is_aggregate_type(param["type"]) for param in fn["params"]):
+        if any(_is_memory_type(param["type"]) for param in fn["params"]):
             return True
-        if _is_aggregate_type(fn["returns"]):
+        if _is_memory_type(fn["returns"]):
             return True
         for block in fn["blocks"]:
-            if any(_is_aggregate_type(param["type"]) for param in block["params"]):
+            if any(_is_memory_type(param["type"]) for param in block["params"]):
                 return True
             for op in block["ops"]:
-                if _is_aggregate_type(op.get("type")):
+                if _is_memory_type(op.get("type")):
                     return True
                 if op.get("op") in {
                     "array.make",
