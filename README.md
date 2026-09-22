@@ -4,7 +4,7 @@ APL is an experimental programming language and execution architecture designed 
 
 The normative program is not optimized for human typing. It is an explicit typed semantic representation that AI systems can generate, verify, transform, optimize, explain, and compile.
 
-> Status: **pre-alpha / Draft 0.0.13**
+> Status: **pre-alpha / Draft 0.0.14**
 
 ## What exists now
 
@@ -28,6 +28,7 @@ The executable reference core includes:
 - typed declarative function `requires`/`ensures` contracts with deterministic pre/postcondition traps;
 - structural bounded `i64` range types with explicit `range.check` refinement and `range.value` widening;
 - symbolic structural quantity types with static unit-exponent algebra and explicit attach/value conversions;
+- reusable typed module invariants for function contracts and explicit `invariant.check` assertions;
 - static rejection of direct and mutual recursion in Draft 0.0.2;
 - strict verifier;
 - deterministic canonical encoding and SHA-256 identity;
@@ -35,7 +36,7 @@ The executable reference core includes:
 - CLI;
 - conformance tests and CI on Python 3.11 and 3.13.
 
-APL 0.0.1–0.0.12 programs remain supported. Draft 0.0.13 adds symbolic integer quantity types with exact unit vectors, static multiplication/division algebra, and no implicit scaling or unit conversion.
+APL 0.0.1–0.0.13 programs remain supported. Draft 0.0.14 adds explicit reusable module invariants that can be referenced from contracts or checked at arbitrary SSA points without introducing implicit refinement semantics.
 
 The Python implementation is a bootstrap reference implementation, not the planned high-performance runtime.
 
@@ -91,8 +92,12 @@ apl run examples/ranges_fail.apl
 apl verify examples/quantities.apl
 apl run examples/quantities.apl
 
-apl canonicalize examples/quantities.apl
-apl hash examples/quantities.apl
+apl verify examples/invariants.apl
+apl run examples/invariants.apl
+apl run examples/invariants_fail.apl
+
+apl canonicalize examples/invariants.apl
+apl hash examples/invariants.apl
 ```
 
 ## Why the IR looks like this
@@ -126,7 +131,7 @@ APL semantic IR
     +--> optimizer --> WASM/native/accelerator backend
 ```
 
-M2 is complete and M3 now includes contracts, bounded `i64` ranges, and symbolic quantity algebra. The next work is reusable machine-checkable invariants.
+M3 is complete: contracts, bounded `i64` ranges, symbolic quantity algebra, and reusable machine-checkable invariants are implemented. The next milestone is M4: normalized lower IR and the compiler path.
 
 ## License
 
