@@ -73,6 +73,7 @@ jobs:
           apl verify examples/wasm_scalar.apl
           apl compile-wasm examples/wasm_scalar.apl /tmp/wasm_scalar.wasm
           apl compile-wasm examples/wasm_mul.apl /tmp/wasm_mul.wasm
+          apl compile-wasm examples/wasm_if.apl /tmp/wasm_if.wasm
           node - <<'NODE'
           const fs = require("fs");
           const bytes = fs.readFileSync("/tmp/wasm_scalar.wasm");
@@ -92,13 +93,17 @@ jobs:
           }
           Promise.all([
             run("/tmp/wasm_scalar.wasm"),
-            run("/tmp/wasm_mul.wasm")
-          ]).then(([addValue, mulValue]) => {
+            run("/tmp/wasm_mul.wasm"),
+            run("/tmp/wasm_if.wasm")
+          ]).then(([addValue, mulValue, ifValue]) => {
             if (addValue !== 42n) {
               throw new Error(`expected add 42n, got ${addValue}`);
             }
             if (mulValue !== 42n) {
               throw new Error(`expected mul 42n, got ${mulValue}`);
+            }
+            if (ifValue !== 42n) {
+              throw new Error(`expected if/call 42n, got ${ifValue}`);
             }
           });
           NODE
