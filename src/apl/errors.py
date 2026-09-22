@@ -18,3 +18,7 @@ class ExecutionError(AplError):
     def __str__(self) -> str:
         location = f" {self.where}:" if self.where else ""
         return f"[{self.code}]{location} {self.message}"
+
+
+class CompilationError(AplError):
+    """Raised when verified APL/LIR cannot be compiled by a backend."""

@@ -43,6 +43,15 @@
 
 - [x] normalized lower IR with deterministic CFG/block-parameter SSA and independent verifier
 - [ ] WASM backend
+  - [x] real WebAssembly 1.0 binary emitter for pure scalar single-block LIR
+  - [x] checked add/sub/div/rem trap ABI and native Node execution test
+  - [x] checked multiplication
+  - [x] multi-block CFG / structured `if` control
+  - [x] bounded `repeat` runtime guards
+  - [x] module-wide `steps` resource budget
+  - [x] contract/invariant guards plus range/quantity scalar lowering
+  - [ ] strings, arrays, records and explicit application-trap diagnostics
+  - [ ] host effects plus output/host-read budgets
 - [ ] optimization equivalence tests
 - [ ] differential testing: interpreter vs compiled output
 
