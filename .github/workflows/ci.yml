@@ -377,6 +377,20 @@ jobs:
           });
           NODE
 
+      - name: Differential interpreter vs WebAssembly
+        run: |
+          rm -rf /tmp/apl-differential-wasm
+          python tests/differential_reference.py \
+            tests/differential_manifest.json \
+            /tmp/apl-differential-reference.json
+          python tests/differential_compile.py \
+            tests/differential_manifest.json \
+            /tmp/apl-differential-wasm
+          node tests/differential_wasm.js \
+            tests/differential_manifest.json \
+            /tmp/apl-differential-reference.json \
+            /tmp/apl-differential-wasm
+
       - name: Run successful examples
         run: |
           output="$(apl run examples/hello.apl)"
