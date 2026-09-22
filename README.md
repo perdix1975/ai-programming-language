@@ -31,6 +31,7 @@ The executable reference core includes:
 - reusable typed module invariants for function contracts and explicit `invariant.check` assertions;
 - deterministic normalized compiler LIR 0.1 with explicit CFG/block parameters, source-step ticks, independent verification, and stable lower hashes;
 - a real WebAssembly 1.0 backend covering checked arithmetic, calls, CFG control, bounded `repeat`, UTF-8 strings, immutable arrays/records, host effects, all resource budgets, contracts/invariants, ranges, quantities and diagnostic-preserving application traps;
+- deterministic trap-safe LIR optimization plus systematic interpreter ↔ baseline WASM ↔ optimized WASM differential conformance;
 - static rejection of direct and mutual recursion in Draft 0.0.2;
 - strict verifier;
 - deterministic canonical encoding and SHA-256 identity;
@@ -106,6 +107,9 @@ apl lower-hash examples/invariants.apl
 # save 'apl lower' output, then:
 apl verify-lir program.lir.json
 
+apl optimize examples/wasm_scalar.apl > program.optimized.lir.json
+apl optimize-lir program.optimized.lir.json > program.optimized-again.lir.json
+
 apl compile-wasm examples/wasm_scalar.apl program.wasm
 ```
 
@@ -122,6 +126,7 @@ Human-friendly surface syntax can be added later, but it will lower into the sam
 - [Architecture](docs/ARCHITECTURE.md)
 - [Normalized compiler LIR 0.1](docs/LIR_v0.md)
 - [WebAssembly backend](docs/WASM_BACKEND.md)
+- [Compiler equivalence](docs/COMPILER_EQUIVALENCE.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Conformance testing](docs/CONFORMANCE.md)
 
@@ -142,7 +147,7 @@ APL semantic IR
     +--> normalized CFG LIR --> optimizer --> WASM/native/accelerator backend
 ```
 
-M3 is complete. The core M4 compiler path is now executable through normalized CFG LIR 0.1 and WebAssembly across the current APL semantic surface. The remaining M4 checkpoints are systematic interpreter-vs-compiled differential testing and optimization-equivalence testing.
+M4 is complete: normalized CFG LIR, executable WebAssembly, deterministic trap-safe optimization, and systematic interpreter/compiled differential equivalence are all under CI. The next milestone is M5, the AI-native semantic layer.
 
 ## License
 
