@@ -102,7 +102,7 @@ def _type_descriptor_text(typ: Any) -> str:
 
 def _is_i64_slot_type(typ: Any) -> bool:
     return (
-        typ in {"i64", "string"}
+        (isinstance(typ, str) and typ in {"i64", "string"})
         or is_range_type(typ)
         or is_quantity_type(typ)
     )
