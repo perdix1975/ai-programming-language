@@ -6,6 +6,15 @@
   "entry":"main",
   "functions":[
     {
+      "name":"identity_quantity",
+      "params":[{"name":"x","type":{"quantity":{"m":1}}}],
+      "returns":{"quantity":{"m":1}},
+      "effects":[],
+      "requires":[],
+      "ensures":[],
+      "body":[{"op":"return","value":"x"}]
+    },
+    {
       "name":"main",
       "params":[],
       "returns":"i64",
@@ -13,10 +22,8 @@
       "requires":[],
       "ensures":[],
       "body":[
-        {"op":"const","id":"raw","type":"i64","value":1},
-        {"op":"quantity.attach","id":"q","type":{"quantity":{"m":1}},"args":["raw"]},
-        {"op":"quantity.value","id":"wide","type":"i64","args":["q"]},
-        {"op":"return","value":"wide"}
+        {"op":"const","id":"answer","type":"i64","value":42},
+        {"op":"return","value":"answer"}
       ]
     }
   ]
