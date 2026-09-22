@@ -191,6 +191,14 @@ async function instantiateAplWasm(path, options = {}) {
           throw error;
         }
       },
+      require_host(kind) {
+        if (!state.hostAvailable) {
+          const label = kind === 1 ? "fs.read_text" : "net.get_text";
+          const error = new Error(`HOST_UNAVAILABLE:${label}`);
+          error.aplCode = "apl.host_unavailable";
+          throw error;
+        }
+      },
       string_eq(left, right) {
         return decodeString(left) === decodeString(right) ? 1 : 0;
       },
