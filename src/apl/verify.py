@@ -7,10 +7,11 @@ from typing import Any
 from . import SUPPORTED_LANGUAGE_VERSIONS
 from .contracts import verify_function_contracts
 from .errors import VerificationError
+from .ranges import I64_MAX, I64_MIN, is_range_type
 from .resources import RESOURCE_LIMIT_MAXIMA
 
 SUPPORTED_TYPES = {"i64", "bool", "string", "unit"}
-VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4, "0.0.5": 5, "0.0.6": 6, "0.0.7": 7, "0.0.8": 8, "0.0.9": 9, "0.0.10": 10, "0.0.11": 11}
+VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4, "0.0.5": 5, "0.0.6": 6, "0.0.7": 7, "0.0.8": 8, "0.0.9": 9, "0.0.10": 10, "0.0.11": 11, "0.0.12": 12}
 MAX_REPEAT_BOUND = 1_000_000
 MAX_ARRAY_LENGTH = 65_536
 MAX_RECORD_FIELDS = 256
@@ -84,6 +85,35 @@ def _validate_type(raw: Any, version: str, where: str) -> None:
 
     _expect(isinstance(raw, dict),
             f"{where}: type must be a primitive name or structured descriptor")
+
+    if set(raw) == {"range"}:
+        _expect(_supports(version, 12),
+                f"{where}: range types require APL 0.0.12")
+        spec = raw.get("range")
+        _expect(
+            isinstance(spec, dict) and set(spec) == {"min", "max"},
+            f"{where}: range descriptor must contain exactly 'min' and 'max'",
+        )
+        minimum = spec.get("min")
+        maximum = spec.get("max")
+        _expect(
+            isinstance(minimum, int) and not isinstance(minimum, bool),
+            f"{where}: range min must be an i64 integer literal",
+        )
+        _expect(
+            isinstance(maximum, int) and not isinstance(maximum, bool),
+            f"{where}: range max must be an i64 integer literal",
+        )
+        _expect(
+            I64_MIN <= minimum <= I64_MAX,
+            f"{where}: range min must be within i64 bounds",
+        )
+        _expect(
+            I64_MIN <= maximum <= I64_MAX,
+            f"{where}: range max must be within i64 bounds",
+        )
+        _expect(minimum <= maximum, f"{where}: range min must not exceed max")
+        return
 
     if set(raw) == {"array", "len"}:
         _expect(_supports(version, 5),
@@ -358,6 +388,12 @@ def _verify_sequence(
         elif op == "record.get":
             _expect(_supports(version, 6), f"{where}: record.get requires APL 0.0.6")
             _verify_record_get(ins, env, where)
+        elif op == "range.check":
+            _expect(_supports(version, 12), f"{where}: range.check requires APL 0.0.12")
+            _verify_range_check(ins, env, version, where)
+        elif op == "range.value":
+            _expect(_supports(version, 12), f"{where}: range.value requires APL 0.0.12")
+            _verify_range_value(ins, env, where)
         elif op == "fs.read_text":
             _expect(_supports(version, 9), f"{where}: fs.read_text requires APL 0.0.9")
             _verify_host_text_read(ins, env, where, "fs.read_text")
@@ -618,6 +654,42 @@ def _verify_array_len(
     array_type = _value_type(args[0], env, where)
     _expect(_is_array_type(array_type),
             f"{where}: array.len arg must be an array")
+    _bind_result(ins, env, "i64", where)
+
+
+def _verify_range_check(
+    ins: dict[str, Any],
+    env: dict[str, Any],
+    version: str,
+    where: str,
+) -> None:
+    typ = ins.get("type")
+    _validate_type(typ, version, f"{where}: range.check result type")
+    _expect(is_range_type(typ), f"{where}: range.check requires a range result type")
+    args = ins.get("args")
+    _expect(
+        isinstance(args, list) and len(args) == 1 and isinstance(args[0], str),
+        f"{where}: range.check requires exactly one i64 SSA id",
+    )
+    _expect(
+        _value_type(args[0], env, where) == "i64",
+        f"{where}: range.check source must have type 'i64'",
+    )
+    _bind_result(ins, env, typ, where)
+
+
+def _verify_range_value(
+    ins: dict[str, Any],
+    env: dict[str, Any],
+    where: str,
+) -> None:
+    args = ins.get("args")
+    _expect(
+        isinstance(args, list) and len(args) == 1 and isinstance(args[0], str),
+        f"{where}: range.value requires exactly one range SSA id",
+    )
+    source_type = _value_type(args[0], env, where)
+    _expect(is_range_type(source_type), f"{where}: range.value source must be a range")
     _bind_result(ins, env, "i64", where)
 
 
