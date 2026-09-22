@@ -5,6 +5,7 @@ from apl.interpreter import run_program
 from apl.lir import lower_hash, lower_program, verify_lir
 from apl.resources import ResourceLimits
 from apl.verify import verify_program
+from apl.wasm import WASM_MAGIC_VERSION, compile_program_to_wasm
 
 
 def sample_program(version="0.0.1"):
@@ -3511,3 +3512,50 @@ def test_lir_verifier_preserves_explicit_trap_namespace_rules():
         assert "namespace 'apl.*' is reserved" in str(exc)
     else:
         raise AssertionError("expected VerificationError")
+
+
+
+def wasm_scalar_program():
+    return {
+        "apl": "0.0.3",
+        "module": "wasm_scalar",
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "body": [
+                {"op": "const", "id": "a", "type": "i64", "value": 40},
+                {"op": "const", "id": "b", "type": "i64", "value": 2},
+                {"op": "add", "id": "answer", "type": "i64", "args": ["a", "b"]},
+                {"op": "return", "value": "answer"},
+            ],
+        }],
+    }
+
+
+def test_wasm_backend_emits_real_deterministic_binary():
+    first = compile_program_to_wasm(wasm_scalar_program())
+    second = compile_program_to_wasm(wasm_scalar_program())
+    assert first.binary.startswith(WASM_MAGIC_VERSION)
+    assert first.binary == second.binary
+    assert first.entry_export == "apl_entry"
+    assert len(first.binary) > len(WASM_MAGIC_VERSION)
+
+
+def test_wasm_backend_rejects_observable_effects_until_host_abi_exists():
+    try:
+        compile_program_to_wasm(effectful_program())
+    except Exception as exc:
+        assert "host capabilities" in str(exc) or "pure function" in str(exc)
+    else:
+        raise AssertionError("expected backend compilation failure")
+
+
+def test_wasm_backend_rejects_multi_block_cfg_until_structured_backend_exists():
+    try:
+        compile_program_to_wasm(functions_if_program())
+    except Exception as exc:
+        assert "requires one b0 block" in str(exc)
+    else:
+        raise AssertionError("expected backend compilation failure")
