@@ -1,0 +1,11 @@
+{
+  "apl":"0.0.15","module":"v015_primitive_body_call","capabilities":[],
+  "limits":{"steps":20,"output_lines":0,"host_reads":0},"invariants":[],
+  "primitives":[{
+    "id":"p_62f921d65567fdfcc1fc387fa27a418924f55eb443b45a30bb36f86cf24f44b9",
+    "params":[{"name":"x","type":"i64"}],"returns":"i64",
+    "body":[{"op":"call","id":"y","type":"i64","function":"main","args":[]},{"op":"return","value":"y"}]
+  }],
+  "entry":"main","functions":[{"name":"main","params":[],"returns":"i64","effects":[],"requires":[],"ensures":[],
+  "body":[{"op":"const","id":"x","type":"i64","value":1},{"op":"return","value":"x"}]}]
+}
