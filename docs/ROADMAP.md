@@ -57,8 +57,8 @@
 
 ## M5 — AI-native layer
 
-- semantic macro/primitive mechanism
-- machine-generated primitive identifiers
+- [x] content-addressed pure semantic primitive mechanism
+- [x] machine-generated primitive identifiers
 - explicit lowering proofs/checks
 - learned cost model
 - profile-guided specialization

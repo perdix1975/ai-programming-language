@@ -1,0 +1,12 @@
+{
+  "params": [
+    {"name": "x", "type": "i64"}
+  ],
+  "returns": "i64",
+  "body": [
+    {"op": "const", "id": "one", "type": "i64", "value": 1},
+    {"op": "mul", "id": "square", "type": "i64", "args": ["x", "x"]},
+    {"op": "add", "id": "result", "type": "i64", "args": ["square", "one"]},
+    {"op": "return", "value": "result"}
+  ]
+}

@@ -13,6 +13,7 @@ from .invariants import (
     MAX_INVARIANT_MESSAGE_LENGTH,
     MAX_INVARIANT_PARAMS,
 )
+from .primitives import lower_primitives
 from .quantities import (
     MAX_UNIT_EXPONENT,
     MAX_UNIT_TERMS,
@@ -24,7 +25,7 @@ from .ranges import I64_MAX, I64_MIN, is_range_type
 from .resources import RESOURCE_LIMIT_MAXIMA
 
 SUPPORTED_TYPES = {"i64", "bool", "string", "unit"}
-VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4, "0.0.5": 5, "0.0.6": 6, "0.0.7": 7, "0.0.8": 8, "0.0.9": 9, "0.0.10": 10, "0.0.11": 11, "0.0.12": 12, "0.0.13": 13, "0.0.14": 14}
+VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4, "0.0.5": 5, "0.0.6": 6, "0.0.7": 7, "0.0.8": 8, "0.0.9": 9, "0.0.10": 10, "0.0.11": 11, "0.0.12": 12, "0.0.13": 13, "0.0.14": 14, "0.0.15": 15}
 MAX_REPEAT_BOUND = 1_000_000
 MAX_ARRAY_LENGTH = 65_536
 MAX_RECORD_FIELDS = 256
@@ -275,6 +276,24 @@ def _is_record_type(raw: Any) -> bool:
 
 
 def verify_program(program: Any) -> None:
+    _expect(isinstance(program, dict), "program must be an object")
+    version = program.get("apl")
+    _expect(
+        version in SUPPORTED_LANGUAGE_VERSIONS,
+        f"unsupported APL version '{version}'",
+    )
+    if _supports(version, 15):
+        core_program = lower_primitives(program)
+    else:
+        _expect(
+            "primitives" not in program,
+            "semantic primitive declarations require APL 0.0.15",
+        )
+        core_program = program
+    _verify_core_program(core_program)
+
+
+def _verify_core_program(program: Any) -> None:
     _expect(isinstance(program, dict), "program must be an object")
     version = program.get("apl")
     _expect(version in SUPPORTED_LANGUAGE_VERSIONS,

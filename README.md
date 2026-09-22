@@ -4,7 +4,7 @@ APL is an experimental programming language and execution architecture designed 
 
 The normative program is not optimized for human typing. It is an explicit typed semantic representation that AI systems can generate, verify, transform, optimize, explain, and compile.
 
-> Status: **pre-alpha / Draft 0.0.14**
+> Status: **pre-alpha / Draft 0.0.15**
 
 ## What exists now
 
@@ -29,6 +29,7 @@ The executable reference core includes:
 - structural bounded `i64` range types with explicit `range.check` refinement and `range.value` widening;
 - symbolic structural quantity types with static unit-exponent algebra and explicit attach/value conversions;
 - reusable typed module invariants for function contracts and explicit `invariant.check` assertions;
+- content-addressed pure semantic primitives with machine-generated SHA-256 ids and deterministic lowering to ordinary verified core functions;
 - deterministic normalized compiler LIR 0.1 with explicit CFG/block parameters, source-step ticks, independent verification, and stable lower hashes;
 - a real WebAssembly 1.0 backend covering checked arithmetic, calls, CFG control, bounded `repeat`, UTF-8 strings, immutable arrays/records, host effects, all resource budgets, contracts/invariants, ranges, quantities and diagnostic-preserving application traps;
 - deterministic trap-safe LIR optimization plus systematic interpreter ↔ baseline WASM ↔ optimized WASM differential conformance;
@@ -39,7 +40,7 @@ The executable reference core includes:
 - CLI;
 - conformance tests and CI on Python 3.11 and 3.13.
 
-APL 0.0.1–0.0.13 programs remain supported. Draft 0.0.14 adds explicit reusable module invariants that can be referenced from contracts or checked at arbitrary SSA points without introducing implicit refinement semantics.
+APL 0.0.1–0.0.14 programs remain supported. Draft 0.0.15 adds content-addressed pure semantic primitives whose machine-generated ids commit to their canonical typed bodies and whose calls lower deterministically to the existing verified core.
 
 The Python implementation is a bootstrap reference implementation, not the planned high-performance runtime.
 
@@ -110,6 +111,11 @@ apl verify-lir program.lir.json
 apl optimize examples/wasm_scalar.apl > program.optimized.lir.json
 apl optimize-lir program.optimized.lir.json > program.optimized-again.lir.json
 
+apl primitive-id examples/primitive_square_plus_one.json
+apl verify examples/semantic_primitives.apl
+apl run examples/semantic_primitives.apl
+apl compile-wasm examples/semantic_primitives.apl semantic_primitives.wasm
+
 apl compile-wasm examples/wasm_scalar.apl program.wasm
 ```
 
@@ -147,7 +153,7 @@ APL semantic IR
     +--> normalized CFG LIR --> optimizer --> WASM/native/accelerator backend
 ```
 
-M4 is complete: normalized CFG LIR, executable WebAssembly, deterministic trap-safe optimization, and systematic interpreter/compiled differential equivalence are all under CI. The next milestone is M5, the AI-native semantic layer.
+M4 is complete. M5 is underway: Draft 0.0.15 now provides content-addressed semantic primitives and machine-generated primitive identifiers while preserving the existing verifier/interpreter/LIR/WASM trusted path.
 
 ## License
 

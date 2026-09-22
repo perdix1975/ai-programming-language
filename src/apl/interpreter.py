@@ -7,6 +7,7 @@ from .contracts import evaluate_contracts, evaluate_named_invariant
 from .errors import ExecutionError
 from .host import DeterministicHost
 from .invariants import index_invariants
+from .primitives import lower_primitives
 from .ranges import range_bounds, range_contains
 from .resources import ExecutionBudget, ResourceLimits
 from .verify import verify_program
@@ -66,6 +67,7 @@ def run_program(
     limits: ResourceLimits | None = None,
 ) -> ExecutionResult:
     verify_program(program)
+    program = lower_primitives(program)
     functions = {fn["name"]: fn for fn in program["functions"]}
     invariant_definitions = index_invariants(program.get("invariants"))
 
