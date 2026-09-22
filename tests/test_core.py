@@ -1606,3 +1606,402 @@ def test_explicit_host_limits_can_bound_legacy_programs():
         assert exc.where == "main[2]"
     else:
         raise AssertionError("expected ExecutionError")
+
+
+
+def contract_clause(contract_id, message, predicate):
+    return {"id": contract_id, "message": message, "predicate": predicate}
+
+
+def var(name):
+    return {"var": name}
+
+
+def result_ref():
+    return {"result": True}
+
+
+def contract_const(typ, value):
+    return {"const": {"type": typ, "value": value}}
+
+
+def predicate(op, *args):
+    return {"op": op, "args": list(args)}
+
+
+def contract_program(argument=3):
+    return {
+        "apl": "0.0.11",
+        "module": "contracts",
+        "capabilities": [],
+        "limits": {"steps": 100, "output_lines": 0, "host_reads": 0},
+        "entry": "main",
+        "functions": [
+            {
+                "name": "double_positive",
+                "params": [{"name": "x", "type": "i64"}],
+                "returns": "i64",
+                "effects": [],
+                "requires": [
+                    contract_clause(
+                        "positive_input",
+                        "x must be positive",
+                        predicate("gt", var("x"), contract_const("i64", 0)),
+                    )
+                ],
+                "ensures": [
+                    contract_clause(
+                        "larger_result",
+                        "result must be larger than x",
+                        predicate("gt", result_ref(), var("x")),
+                    )
+                ],
+                "body": [
+                    {"op": "add", "id": "answer", "type": "i64", "args": ["x", "x"]},
+                    {"op": "return", "value": "answer"},
+                ],
+            },
+            {
+                "name": "main",
+                "params": [],
+                "returns": "i64",
+                "effects": [],
+                "requires": [],
+                "ensures": [],
+                "body": [
+                    {"op": "const", "id": "x", "type": "i64", "value": argument},
+                    {
+                        "op": "call",
+                        "id": "answer",
+                        "type": "i64",
+                        "function": "double_positive",
+                        "args": ["x"],
+                    },
+                    {"op": "return", "value": "answer"},
+                ],
+            },
+        ],
+    }
+
+
+def test_v011_preconditions_and_postconditions_pass():
+    p = contract_program()
+    verify_program(p)
+    result = run_program(p, output=lambda _: None)
+    assert result.value == 6
+
+
+def test_precondition_failure_has_stable_trap():
+    p = contract_program(argument=0)
+    try:
+        run_program(p, output=lambda _: None)
+    except ExecutionError as exc:
+        assert exc.code == "apl.precondition_failed"
+        assert exc.where == "double_positive.requires[0]"
+        assert "positive_input" in exc.message
+        assert "x must be positive" in exc.message
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_precondition_failure_happens_before_body_effect():
+    p = {
+        "apl": "0.0.11",
+        "module": "pre_effect",
+        "capabilities": ["console.write"],
+        "limits": {"steps": 100, "output_lines": 10, "host_reads": 0},
+        "entry": "main",
+        "functions": [
+            {
+                "name": "emit_positive",
+                "params": [{"name": "x", "type": "i64"}],
+                "returns": "i64",
+                "effects": ["console.write"],
+                "requires": [
+                    contract_clause(
+                        "positive",
+                        "positive required",
+                        predicate("gt", var("x"), contract_const("i64", 0)),
+                    )
+                ],
+                "ensures": [],
+                "body": [
+                    {"op": "print", "args": ["x"]},
+                    {"op": "return", "value": "x"},
+                ],
+            },
+            {
+                "name": "main",
+                "params": [],
+                "returns": "i64",
+                "effects": ["console.write"],
+                "requires": [],
+                "ensures": [],
+                "body": [
+                    {"op": "const", "id": "x", "type": "i64", "value": 0},
+                    {
+                        "op": "call",
+                        "id": "answer",
+                        "type": "i64",
+                        "function": "emit_positive",
+                        "args": ["x"],
+                    },
+                    {"op": "return", "value": "answer"},
+                ],
+            },
+        ],
+    }
+    lines = []
+    try:
+        run_program(p, output=lines.append, capabilities={"console.write"})
+    except ExecutionError as exc:
+        assert exc.code == "apl.precondition_failed"
+        assert lines == []
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_postcondition_failure_occurs_after_body_effects():
+    p = {
+        "apl": "0.0.11",
+        "module": "post_effect",
+        "capabilities": ["console.write"],
+        "limits": {"steps": 100, "output_lines": 10, "host_reads": 0},
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "effects": ["console.write"],
+            "requires": [],
+            "ensures": [
+                contract_clause(
+                    "impossible",
+                    "result must be negative",
+                    predicate("lt", result_ref(), contract_const("i64", 0)),
+                )
+            ],
+            "body": [
+                {"op": "const", "id": "answer", "type": "i64", "value": 42},
+                {"op": "print", "args": ["answer"]},
+                {"op": "return", "value": "answer"},
+            ],
+        }],
+    }
+    lines = []
+    try:
+        run_program(p, output=lines.append, capabilities={"console.write"})
+    except ExecutionError as exc:
+        assert exc.code == "apl.postcondition_failed"
+        assert exc.where == "main.ensures[0]"
+        assert lines == ["42"]
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_v011_requires_explicit_contract_lists():
+    p = contract_program()
+    del p["functions"][0]["requires"]
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "double_positive: requires must be a list" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+    p = contract_program()
+    del p["functions"][0]["ensures"]
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "double_positive: ensures must be a list" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_precondition_cannot_reference_result():
+    p = contract_program()
+    p["functions"][0]["requires"][0]["predicate"] = predicate(
+        "gt", result_ref(), contract_const("i64", 0)
+    )
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "function result is not available in this contract" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_unit_postcondition_cannot_reference_result():
+    p = {
+        "apl": "0.0.11",
+        "module": "unit_contract",
+        "capabilities": [],
+        "limits": {"steps": 10, "output_lines": 0, "host_reads": 0},
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "unit",
+            "effects": [],
+            "requires": [],
+            "ensures": [
+                contract_clause(
+                    "has_result",
+                    "unit has no result",
+                    predicate("eq", result_ref(), result_ref()),
+                )
+            ],
+            "body": [{"op": "return"}],
+        }],
+    }
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "unit function has no result value" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_contract_predicate_must_be_bool():
+    p = contract_program()
+    p["functions"][0]["requires"][0]["predicate"] = var("x")
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "contract predicate must have type 'bool'" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_contract_unknown_variable_is_rejected():
+    p = contract_program()
+    p["functions"][0]["requires"][0]["predicate"] = predicate(
+        "gt", var("missing"), contract_const("i64", 0)
+    )
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "unknown contract variable 'missing'" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_contract_ids_unique_across_requires_and_ensures():
+    p = contract_program()
+    p["functions"][0]["ensures"][0]["id"] = "positive_input"
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "contract ids must be unique across requires/ensures" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_contract_eq_requires_identical_types():
+    p = contract_program()
+    p["functions"][0]["requires"][0]["predicate"] = predicate(
+        "eq", var("x"), contract_const("string", "3")
+    )
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "eq args must have identical types" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_contract_boolean_operators_are_eager_and_typed():
+    p = contract_program()
+    p["functions"][0]["requires"][0]["predicate"] = predicate(
+        "and",
+        predicate("gt", var("x"), contract_const("i64", 0)),
+        predicate("lt", var("x"), contract_const("i64", 10)),
+    )
+    verify_program(p)
+    assert run_program(p, output=lambda _: None).value == 6
+
+    p = contract_program()
+    p["functions"][0]["requires"][0]["predicate"] = predicate(
+        "not", var("x")
+    )
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "not requires bool arg" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_contract_or_is_eager_for_deterministic_step_accounting():
+    p = {
+        "apl": "0.0.11",
+        "module": "eager_contract",
+        "capabilities": [],
+        "limits": {"steps": 2, "output_lines": 0, "host_reads": 0},
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "effects": [],
+            "requires": [
+                contract_clause(
+                    "eager_or",
+                    "both operands are evaluated",
+                    predicate(
+                        "or",
+                        contract_const("bool", True),
+                        contract_const("bool", True),
+                    ),
+                )
+            ],
+            "ensures": [],
+            "body": [
+                {"op": "const", "id": "answer", "type": "i64", "value": 42},
+                {"op": "return", "value": "answer"},
+            ],
+        }],
+    }
+    # The OR root consumes step 1, the left constant consumes step 2,
+    # and eager evaluation attempts the right constant as step 3.
+    try:
+        run_program(p, output=lambda _: None)
+    except ExecutionError as exc:
+        assert exc.code == "apl.resource_limit"
+        assert exc.where == "main.requires[0].predicate.args[1]"
+    else:
+        raise AssertionError("expected eager right-operand evaluation")
+
+
+def test_contract_predicate_nodes_consume_step_budget():
+    p = contract_program()
+    p["limits"]["steps"] = 4
+    # main const + call consume two steps; precondition root and left leaf
+    # consume the remaining two. The right const leaf is the fifth step.
+    try:
+        run_program(p, output=lambda _: None)
+    except ExecutionError as exc:
+        assert exc.code == "apl.resource_limit"
+        assert exc.where == "double_positive.requires[0].predicate.args[1]"
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_legacy_v010_functions_do_not_require_contract_fields():
+    p = limited_pure_program()
+    verify_program(p)
+    assert run_program(p, output=lambda _: None).value == 42
+
+
+
+def test_pre_v011_rejects_contract_fields():
+    p = limited_pure_program()
+    p["functions"][0]["requires"] = []
+    p["functions"][0]["ensures"] = []
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "function contracts require APL 0.0.11" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")

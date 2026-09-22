@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from .contracts import evaluate_contracts
 from .errors import ExecutionError
 from .host import DeterministicHost
 from .resources import ExecutionBudget, ResourceLimits
@@ -111,7 +112,19 @@ def _execute_function(
     env = {param["name"]: value for param, value in zip(fn["params"], arguments)}
     types = {param["name"]: param["type"] for param in fn["params"]}
 
-    return _execute_sequence(
+    has_contracts = "requires" in fn and "ensures" in fn
+    if has_contracts:
+        evaluate_contracts(
+            fn["requires"],
+            values=env,
+            result_value=None,
+            allow_result=False,
+            budget=budget,
+            function_name=function_name,
+            kind="requires",
+        )
+
+    result = _execute_sequence(
         instructions=fn["body"],
         env=env,
         types=types,
@@ -126,6 +139,18 @@ def _execute_function(
         result_type=fn["returns"],
         where_prefix=function_name,
     )
+
+    if has_contracts:
+        evaluate_contracts(
+            fn["ensures"],
+            values=env,
+            result_value=result.value,
+            allow_result=fn["returns"] != "unit",
+            budget=budget,
+            function_name=function_name,
+            kind="ensures",
+        )
+    return result
 
 
 def _execute_sequence(

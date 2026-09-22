@@ -4,7 +4,7 @@ APL is an experimental programming language and execution architecture designed 
 
 The normative program is not optimized for human typing. It is an explicit typed semantic representation that AI systems can generate, verify, transform, optimize, explain, and compile.
 
-> Status: **pre-alpha / Draft 0.0.10**
+> Status: **pre-alpha / Draft 0.0.11**
 
 ## What exists now
 
@@ -25,6 +25,7 @@ The executable reference core includes:
 - explicit runtime capability grants, with `console.write` as the first protected host effect;
 - deterministic fixture-backed `fs.read_text` and `net.get_text` host operations;
 - deterministic `steps`, `output_lines`, and `host_reads` execution budgets with optional stricter host limits;
+- typed declarative function `requires`/`ensures` contracts with deterministic pre/postcondition traps;
 - static rejection of direct and mutual recursion in Draft 0.0.2;
 - strict verifier;
 - deterministic canonical encoding and SHA-256 identity;
@@ -32,7 +33,7 @@ The executable reference core includes:
 - CLI;
 - conformance tests and CI on Python 3.11 and 3.13.
 
-APL 0.0.1–0.0.9 programs remain supported. Draft 0.0.10 requires an exact `limits` object in the program IR. Runtime hosts may impose stricter `--max-*` limits, but can never loosen the program-declared budgets.
+APL 0.0.1–0.0.10 programs remain supported. Draft 0.0.11 adds explicit typed `requires` and `ensures` lists to every function; predicate evaluation is pure, deterministic, and charged to the existing step budget.
 
 The Python implementation is a bootstrap reference implementation, not the planned high-performance runtime.
 
@@ -77,8 +78,12 @@ apl verify examples/limits.apl
 apl run examples/limits.apl
 apl run examples/limits.apl --max-steps 1
 
-apl canonicalize examples/limits.apl
-apl hash examples/limits.apl
+apl verify examples/contracts.apl
+apl run examples/contracts.apl
+apl run examples/contracts_fail.apl
+
+apl canonicalize examples/contracts.apl
+apl hash examples/contracts.apl
 ```
 
 ## Why the IR looks like this
@@ -112,7 +117,7 @@ APL semantic IR
     +--> optimizer --> WASM/native/accelerator backend
 ```
 
-M2 is complete. The next work moves into M3 contracts and richer types: preconditions/postconditions, refinement/range types, units/dimensions, and machine-checkable invariants.
+M2 is complete and M3 contracts are underway. The next work adds refinement/range types, units/dimensions, and reusable machine-checkable invariants.
 
 ## License
 

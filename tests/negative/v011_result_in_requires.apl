@@ -1,0 +1,33 @@
+{
+  "apl":"0.0.11",
+  "module":"v011_result_in_requires",
+  "capabilities":[],
+  "limits":{"steps":20,"output_lines":0,"host_reads":0},
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"i64",
+      "effects":[],
+      "requires":[
+        {
+          "id":"bad_result_scope",
+          "message":"result not available yet",
+          "predicate":{
+            "op":"eq",
+            "args":[
+              {"result":true},
+              {"const":{"type":"i64","value":1}}
+            ]
+          }
+        }
+      ],
+      "ensures":[],
+      "body":[
+        {"op":"const","id":"answer","type":"i64","value":42},
+        {"op":"return","value":"answer"}
+      ]
+    }
+  ]
+}

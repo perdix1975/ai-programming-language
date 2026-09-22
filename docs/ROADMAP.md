@@ -34,10 +34,10 @@
 
 ## M3 — Contracts and richer types
 
-- preconditions/postconditions
-- refinement/range types
-- units/dimensions exploration
-- machine-checkable invariants
+- [x] typed declarative preconditions/postconditions with deterministic runtime enforcement
+- [ ] refinement/range types
+- [ ] units/dimensions exploration
+- [ ] machine-checkable invariants
 
 ## M4 — Compiler path
 
