@@ -4,7 +4,7 @@ APL is an experimental programming language and execution architecture designed 
 
 The normative program is not optimized for human typing. It is an explicit typed semantic representation that AI systems can generate, verify, transform, optimize, explain, and compile.
 
-> Status: **pre-alpha / Draft 0.0.11**
+> Status: **pre-alpha / Draft 0.0.12**
 
 ## What exists now
 
@@ -25,7 +25,7 @@ The executable reference core includes:
 - explicit runtime capability grants, with `console.write` as the first protected host effect;
 - deterministic fixture-backed `fs.read_text` and `net.get_text` host operations;
 - deterministic `steps`, `output_lines`, and `host_reads` execution budgets with optional stricter host limits;
-- typed declarative function `requires`/`ensures` contracts with deterministic pre/postcondition traps;
+- typed declarative function `requires`/`ensures` contracts with deterministic pre/postcondition traps;\n- structural bounded `i64` range types with explicit `range.check` refinement and `range.value` widening;
 - static rejection of direct and mutual recursion in Draft 0.0.2;
 - strict verifier;
 - deterministic canonical encoding and SHA-256 identity;
@@ -33,7 +33,7 @@ The executable reference core includes:
 - CLI;
 - conformance tests and CI on Python 3.11 and 3.13.
 
-APL 0.0.1–0.0.10 programs remain supported. Draft 0.0.11 adds explicit typed `requires` and `ensures` lists to every function; predicate evaluation is pure, deterministic, and charged to the existing step budget.
+APL 0.0.1–0.0.11 programs remain supported. Draft 0.0.12 adds structural bounded `i64` range types with explicit runtime refinement checks and no implicit conversions.
 
 The Python implementation is a bootstrap reference implementation, not the planned high-performance runtime.
 
@@ -82,8 +82,12 @@ apl verify examples/contracts.apl
 apl run examples/contracts.apl
 apl run examples/contracts_fail.apl
 
-apl canonicalize examples/contracts.apl
-apl hash examples/contracts.apl
+apl verify examples/ranges.apl
+apl run examples/ranges.apl
+apl run examples/ranges_fail.apl
+
+apl canonicalize examples/ranges.apl
+apl hash examples/ranges.apl
 ```
 
 ## Why the IR looks like this
@@ -117,7 +121,7 @@ APL semantic IR
     +--> optimizer --> WASM/native/accelerator backend
 ```
 
-M2 is complete and M3 contracts are underway. The next work adds refinement/range types, units/dimensions, and reusable machine-checkable invariants.
+M2 is complete and M3 now includes contracts plus bounded `i64` range refinements. The next work explores units/dimensions and reusable machine-checkable invariants.
 
 ## License
 
