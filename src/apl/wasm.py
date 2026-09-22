@@ -24,6 +24,13 @@ TRAP_POSTCONDITION_FAILED = 7
 TRAP_INVARIANT_FAILED = 8
 TRAP_RANGE_VIOLATION = 9
 
+CAPABILITY_BITS = {
+    "console.write": 1,
+    "fs.read_text": 2,
+    "net.get_text": 4,
+}
+RESOURCE_ORDER = ("steps", "output_lines", "host_reads")
+
 
 def _u32(value: int) -> bytes:
     if value < 0:
@@ -67,13 +74,22 @@ def _section(section_id: int, payload: bytes) -> bytes:
     return bytes([section_id]) + _u32(len(payload)) + payload
 
 
+def _packed_string_handle(pointer: int, length: int) -> int:
+    if not (0 <= pointer <= 0xFFFFFFFF and 0 <= length <= 0xFFFFFFFF):
+        raise CompilationError("WASM string pointer/length exceed packed i64 ABI")
+    raw = (pointer << 32) | length
+    return raw if raw < 2**63 else raw - 2**64
+
+
 def _value_type(typ: Any) -> int:
     if typ == "i64" or is_range_type(typ) or is_quantity_type(typ):
         return WASM_I64
     if typ == "bool":
         return WASM_I32
+    if typ == "string":
+        return WASM_I64
     raise CompilationError(
-        "WASM scalar backend supports i64/bool/range/quantity values, "
+        "WASM backend supports scalar i64/bool/string/range/quantity values, "
         f"got {typ!r}"
     )
 
@@ -138,12 +154,18 @@ class _FunctionCompiler:
         *,
         function_indices: dict[str, int],
         signatures: dict[str, tuple[list[Any], Any]],
-        step_global_index: int | None,
+        import_indices: dict[str, int],
+        budget_global_indices: dict[str, int],
+        string_handles: dict[str, int],
+        entry_capability_mask: int,
     ) -> None:
         self.fn = fn
         self.function_indices = function_indices
         self.signatures = signatures
-        self.step_global_index = step_global_index
+        self.import_indices = import_indices
+        self.budget_global_indices = budget_global_indices
+        self.string_handles = string_handles
+        self.entry_capability_mask = entry_capability_mask
         self.types: dict[str, Any] = {
             param["id"]: param["type"] for param in fn["params"]
         }
@@ -170,6 +192,18 @@ class _FunctionCompiler:
         a, b = op["args"]
         dest = self._index(op["id"])
         return self._arg(a) + self._arg(b) + _op(opcode) + _local_set(dest)
+
+    def _consume_resource(self, resource: str) -> bytes:
+        index = self.budget_global_indices.get(resource)
+        if index is None:
+            return b""
+        exhausted = _op(0x23, _u32(index), 0x50)
+        decrement = (
+            _op(0x23, _u32(index))
+            + _op(0x42, _sleb(1, 64), 0x7D)
+            + _op(0x24, _u32(index))
+        )
+        return _guard_if(exhausted, _trap(TRAP_STEP_RESOURCE_LIMIT)) + decrement
 
     def _checked_add(self, op: dict[str, Any]) -> bytes:
         a, b = op["args"]
@@ -358,19 +392,7 @@ class _FunctionCompiler:
         name = op["op"]
 
         if name == "budget.step":
-            if self.step_global_index is None:
-                return b""
-            index = self.step_global_index
-            exhausted = _op(0x23, _u32(index), 0x50)
-            decrement = (
-                _op(0x23, _u32(index))
-                + _op(0x42, _sleb(1, 64), 0x7D)
-                + _op(0x24, _u32(index))
-            )
-            return (
-                _guard_if(exhausted, _trap(TRAP_STEP_RESOURCE_LIMIT))
-                + decrement
-            )
+            return self._consume_resource("steps")
 
         if name == "guard":
             trap_code = {
@@ -437,7 +459,10 @@ class _FunctionCompiler:
                 return _op(0x42, _sleb(op["value"], 64)) + _local_set(dest)
             if op["type"] == "bool":
                 return _op(0x41, _sleb(1 if op["value"] else 0, 32)) + _local_set(dest)
-            raise CompilationError("WASM scalar backend does not support string constants")
+            if op["type"] == "string":
+                handle = self.string_handles[op["value"]]
+                return _op(0x42, _sleb(handle, 64)) + _local_set(dest)
+            raise CompilationError(f"unsupported WASM constant type {op['type']!r}")
 
         if name == "i64.add":
             return self._checked_add(op)
@@ -452,7 +477,49 @@ class _FunctionCompiler:
         if name in {"i64.lt", "i64.le", "i64.gt", "i64.ge"}:
             return self._comparison(op)
         if name in {"value.eq", "value.lt", "value.le", "value.gt", "value.ge"}:
+            if (
+                name == "value.eq"
+                and self.types[op["args"][0]] == "string"
+            ):
+                a, b = op["args"]
+                return (
+                    self._arg(a)
+                    + self._arg(b)
+                    + _call(self.import_indices["string_eq"])
+                    + _local_set(self._index(op["id"]))
+                )
             return self._value_comparison(op)
+
+        if name == "console.write":
+            source = op["arg"]
+            typ = self.types[source]
+            import_name = {
+                "i64": "console_write_i64",
+                "bool": "console_write_bool",
+                "string": "console_write_string",
+            }.get(typ)
+            if import_name is None:
+                raise CompilationError(
+                    f"console.write does not support compiled type {typ!r}"
+                )
+            return (
+                self._consume_resource("output_lines")
+                + self._arg(source)
+                + _call(self.import_indices[import_name])
+            )
+
+        if name in {"host.fs.read_text", "host.net.get_text"}:
+            import_name = (
+                "fs_read_text"
+                if name == "host.fs.read_text"
+                else "net_get_text"
+            )
+            return (
+                self._consume_resource("host_reads")
+                + self._arg(op["arg"])
+                + _call(self.import_indices[import_name])
+                + _local_set(self._index(op["id"]))
+            )
 
         if name == "bool.not":
             src = op["args"][0]
@@ -561,11 +628,6 @@ class _FunctionCompiler:
             raise CompilationError(
                 f"{self.fn['name']}: WASM scalar backend requires canonical b0 entry"
             )
-        if self.fn["effects"]:
-            raise CompilationError(
-                f"{self.fn['name']}: WASM scalar backend requires a pure function"
-            )
-
         for param in self.fn["params"]:
             _value_type(param["type"])
         if self.fn["returns"] != "unit":
@@ -598,6 +660,10 @@ class _FunctionCompiler:
             _u32(1) + bytes([WASM_I32]),
         ]
         code = bytearray(_vec(local_decls))
+
+        if self.entry_capability_mask:
+            code.extend(_op(0x41, _sleb(self.entry_capability_mask, 32)))
+            code.extend(_call(self.import_indices["require_capabilities"]))
 
         # Program-counter CFG dispatcher. This deliberately follows verified
         # LIR block order rather than reconstructing high-level source syntax.
