@@ -2343,3 +2343,55 @@ def test_contract_ordered_comparison_rejects_range_vs_i64():
         assert "requires identical i64 or range args" in str(exc)
     else:
         raise AssertionError("expected VerificationError")
+
+
+
+def test_range_type_survives_if_and_repeat_regions():
+    bounded = range_type(0, 10)
+    p = {
+        "apl": "0.0.12",
+        "module": "range_regions",
+        "capabilities": [],
+        "limits": {"steps": 100, "output_lines": 0, "host_reads": 0},
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "effects": [],
+            "requires": [],
+            "ensures": [],
+            "body": [
+                {"op": "const", "id": "raw_a", "type": "i64", "value": 3},
+                {"op": "const", "id": "raw_b", "type": "i64", "value": 7},
+                {"op": "range.check", "id": "a", "type": bounded, "args": ["raw_a"]},
+                {"op": "range.check", "id": "b", "type": bounded, "args": ["raw_b"]},
+                {"op": "const", "id": "cond", "type": "bool", "value": True},
+                {
+                    "op": "if",
+                    "id": "selected",
+                    "type": bounded,
+                    "cond": "cond",
+                    "then": [{"op": "yield", "value": "a"}],
+                    "else": [{"op": "yield", "value": "b"}],
+                },
+                {"op": "const", "id": "count", "type": "i64", "value": 2},
+                {
+                    "op": "repeat",
+                    "id": "carried",
+                    "type": bounded,
+                    "count": "count",
+                    "max": 2,
+                    "init": "selected",
+                    "index": "i",
+                    "carry": "current",
+                    "body": [{"op": "yield", "value": "current"}],
+                },
+                {"op": "range.value", "id": "wide", "type": "i64", "args": ["carried"]},
+                {"op": "return", "value": "wide"},
+            ],
+        }],
+    }
+    verify_program(p)
+    result = run_program(p, output=lambda _: None)
+    assert result.value == 3
