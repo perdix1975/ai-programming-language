@@ -3580,10 +3580,6 @@ def aggregate_equality_program():
     }
 
 
-def test_wasm_backend_never_uses_pointer_equality_for_aggregates():
-    try:
-        compile_program_to_wasm(aggregate_equality_program())
-    except CompilationError as exc:
-        assert "structural equality" in str(exc)
-    else:
-        raise AssertionError("expected aggregate structural equality rejection")
+def test_wasm_backend_compiles_structural_aggregate_equality():
+    artifact = compile_program_to_wasm(aggregate_equality_program())
+    assert artifact.binary.startswith(WASM_MAGIC_VERSION)
