@@ -3,9 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from .contracts import evaluate_contracts
+from .contracts import evaluate_contracts, evaluate_named_invariant
 from .errors import ExecutionError
 from .host import DeterministicHost
+from .invariants import index_invariants
 from .ranges import range_bounds, range_contains
 from .resources import ExecutionBudget, ResourceLimits
 from .verify import verify_program
@@ -66,6 +67,7 @@ def run_program(
 ) -> ExecutionResult:
     verify_program(program)
     functions = {fn["name"]: fn for fn in program["functions"]}
+    invariant_definitions = index_invariants(program.get("invariants"))
 
     declared_limits = (
         ResourceLimits.from_program_object(program["limits"])
@@ -95,6 +97,7 @@ def run_program(
         enforce_capabilities=enforce_capabilities,
         host=host,
         budget=budget,
+        invariant_definitions=invariant_definitions,
     )
 
 
@@ -108,6 +111,7 @@ def _execute_function(
     enforce_capabilities: bool,
     host: DeterministicHost | None,
     budget: ExecutionBudget,
+    invariant_definitions: dict[str, dict[str, Any]],
 ) -> ExecutionResult:
     fn = functions[function_name]
     env = {param["name"]: value for param, value in zip(fn["params"], arguments)}
@@ -123,6 +127,7 @@ def _execute_function(
             budget=budget,
             function_name=function_name,
             kind="requires",
+            invariant_definitions=invariant_definitions,
         )
 
     result = _execute_sequence(
@@ -139,6 +144,7 @@ def _execute_function(
         terminator="return",
         result_type=fn["returns"],
         where_prefix=function_name,
+        invariant_definitions=invariant_definitions,
     )
 
     if has_contracts:
@@ -150,6 +156,7 @@ def _execute_function(
             budget=budget,
             function_name=function_name,
             kind="ensures",
+            invariant_definitions=invariant_definitions,
         )
     return result
 
@@ -169,6 +176,7 @@ def _execute_sequence(
     terminator: str,
     result_type: Any,
     where_prefix: str,
+    invariant_definitions: dict[str, dict[str, Any]],
 ) -> ExecutionResult:
     for index, ins in enumerate(instructions):
         op = ins["op"]
@@ -240,6 +248,22 @@ def _execute_sequence(
             record_value = env[ins["record"]]
             env[ins["id"]] = record_value.get(ins["field"])
             types[ins["id"]] = types[ins["record"]]["record"][ins["field"]]
+        elif op == "invariant.check":
+            name = ins["invariant"]
+            definition = invariant_definitions[name]
+            passed = evaluate_named_invariant(
+                definition,
+                arguments=[env[arg] for arg in ins["args"]],
+                budget=budget,
+                where=where,
+                invariant_definitions=invariant_definitions,
+            )
+            if not passed:
+                raise ExecutionError(
+                    "apl.invariant_failed",
+                    f"invariant '{name}' failed: {definition['message']}",
+                    where=where,
+                )
         elif op == "range.check":
             value = env[ins["args"][0]]
             range_type = ins["type"]
@@ -323,6 +347,7 @@ def _execute_sequence(
                 enforce_capabilities=enforce_capabilities,
                 host=host,
                 budget=budget,
+                invariant_definitions=invariant_definitions,
             )
             if result.type != "unit":
                 env[ins["id"]] = result.value
@@ -343,6 +368,7 @@ def _execute_sequence(
                 terminator="yield",
                 result_type=ins["type"],
                 where_prefix=f"{where}.{label}",
+                invariant_definitions=invariant_definitions,
             )
             env[ins["id"]] = branch_result.value
             types[ins["id"]] = branch_result.type
@@ -386,6 +412,7 @@ def _execute_sequence(
                     terminator="yield",
                     result_type=carry_type,
                     where_prefix=f"{where}.body",
+                    invariant_definitions=invariant_definitions,
                 )
                 carry_value = yielded.value
 
