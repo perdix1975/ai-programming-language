@@ -9,7 +9,7 @@ from .errors import VerificationError
 from .quantities import combine_quantity_types, is_quantity_type
 from .ranges import is_range_type
 from .resources import RESOURCE_LIMIT_MAXIMA
-from .verify import _validate_type, verify_program
+from .verify import MAX_TRAP_MESSAGE_LENGTH, TRAP_CODE_RE, _validate_type, verify_program
 
 
 LIR_VERSION = "0.1"
@@ -1519,9 +1519,28 @@ def _verify_lir_term(
     if op == "trap":
         _require_source_version(source_apl, (0, 0, 7), where, "trap")
         _expect(
-            set(term) == {"op", "code", "message", "where"}
-            and all(isinstance(term[key], str) and bool(term[key]) for key in ("code", "message", "where")),
+            set(term) == {"op", "code", "message", "where"},
             f"{where}: trap fields invalid",
+        )
+        code = term["code"]
+        message = term["message"]
+        source_where = term["where"]
+        _expect(
+            isinstance(code, str) and TRAP_CODE_RE.fullmatch(code) is not None,
+            f"{where}: trap code must use canonical syntax",
+        )
+        _expect(
+            not code.startswith("apl.") and code != "apl",
+            f"{where}: trap code namespace 'apl.*' is reserved",
+        )
+        _expect(
+            isinstance(message, str)
+            and 1 <= len(message) <= MAX_TRAP_MESSAGE_LENGTH,
+            f"{where}: trap message length must be in [1, {MAX_TRAP_MESSAGE_LENGTH}]",
+        )
+        _expect(
+            isinstance(source_where, str) and bool(source_where),
+            f"{where}: trap source location must be non-empty",
         )
         return
 
