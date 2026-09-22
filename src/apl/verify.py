@@ -671,6 +671,7 @@ def _verify_if(
     call_graph: dict[str, set[str]],
     effects_used: set[str],
     where: str,
+    invariant_signatures: dict[str, tuple[Any, ...]],
 ) -> None:
     cond = ins.get("cond")
     _expect(isinstance(cond, str), f"{where}: if cond must be an SSA id")
@@ -695,6 +696,7 @@ def _verify_if(
             terminator="yield",
             result_type=result_type,
             where_prefix=f"{where}.{label}",
+            invariant_signatures=invariant_signatures,
         )
 
     _bind_result(ins, env, result_type, where)
@@ -710,6 +712,7 @@ def _verify_repeat(
     call_graph: dict[str, set[str]],
     effects_used: set[str],
     where: str,
+    invariant_signatures: dict[str, tuple[Any, ...]],
 ) -> None:
     count = ins.get("count")
     _expect(isinstance(count, str), f"{where}: repeat count must be an SSA id")
@@ -754,6 +757,7 @@ def _verify_repeat(
         terminator="yield",
         result_type=result_type,
         where_prefix=f"{where}.body",
+        invariant_signatures=invariant_signatures,
     )
 
     _bind_result(ins, env, result_type, where)
