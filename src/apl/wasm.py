@@ -14,6 +14,8 @@ WASM_FUNC = 0x60
 
 TRAP_I64_OVERFLOW = 1
 TRAP_DIVISION_BY_ZERO = 2
+TRAP_REPEAT_NEGATIVE_COUNT = 3
+TRAP_REPEAT_COUNT_EXCEEDS_MAX = 4
 
 
 def _u32(value: int) -> bytes:
@@ -346,6 +348,18 @@ class _FunctionCompiler:
 
         if name == "budget.step":
             return b""
+
+        if name == "repeat.guard":
+            count = op["count"]
+            negative = self._arg(count) + _op(0x42, _sleb(0, 64), 0x53)
+            exceeds = (
+                self._arg(count)
+                + _op(0x42, _sleb(op["max"], 64), 0x55)
+            )
+            return (
+                _guard_if(negative, _trap(TRAP_REPEAT_NEGATIVE_COUNT))
+                + _guard_if(exceeds, _trap(TRAP_REPEAT_COUNT_EXCEEDS_MAX))
+            )
 
         if name == "const":
             dest = self._index(op["id"])
