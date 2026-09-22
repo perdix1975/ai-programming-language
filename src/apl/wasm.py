@@ -106,6 +106,13 @@ def _guard_if(condition: bytes, body: bytes) -> bytes:
     return condition + _op(0x04, 0x40) + body + _op(0x0B)
 
 
+def _if_else(condition: bytes, then_body: bytes, else_body: bytes = b"") -> bytes:
+    code = condition + _op(0x04, 0x40) + then_body
+    if else_body:
+        code += _op(0x05) + else_body
+    return code + _op(0x0B)
+
+
 @dataclass(frozen=True)
 class WasmArtifact:
     binary: bytes
@@ -193,6 +200,76 @@ class _FunctionCompiler:
             + _op(0x42, _sleb(0, 64), 0x53)
         )
         return code + _guard_if(condition, _trap(TRAP_I64_OVERFLOW))
+
+    def _checked_mul(self, op: dict[str, Any]) -> bytes:
+        a, b = op["args"]
+        dest = self._index(op["id"])
+        zero = _op(0x42, _sleb(0, 64))
+        max_i64 = _op(0x42, _sleb(2**63 - 1, 64))
+        min_i64 = _op(0x42, _sleb(-(2**63), 64))
+
+        a_gt_zero = self._arg(a) + zero + _op(0x55)
+        a_lt_zero = self._arg(a) + zero + _op(0x53)
+        b_gt_zero = self._arg(b) + zero + _op(0x55)
+        b_lt_zero = self._arg(b) + zero + _op(0x53)
+
+        # a > 0, b > 0: a > MAX / b
+        pos_pos_overflow = (
+            self._arg(a)
+            + max_i64
+            + self._arg(b)
+            + _op(0x7F, 0x55)
+        )
+        # a > 0, b < 0: b < MIN / a
+        pos_neg_overflow = (
+            self._arg(b)
+            + min_i64
+            + self._arg(a)
+            + _op(0x7F, 0x53)
+        )
+        # a < 0, b > 0: a < MIN / b
+        neg_pos_overflow = (
+            self._arg(a)
+            + min_i64
+            + self._arg(b)
+            + _op(0x7F, 0x53)
+        )
+        # a < 0, b < 0: b < MAX / a
+        neg_neg_overflow = (
+            self._arg(b)
+            + max_i64
+            + self._arg(a)
+            + _op(0x7F, 0x53)
+        )
+
+        positive_a = _if_else(
+            b_gt_zero,
+            _guard_if(pos_pos_overflow, _trap(TRAP_I64_OVERFLOW)),
+            _if_else(
+                b_lt_zero,
+                _guard_if(pos_neg_overflow, _trap(TRAP_I64_OVERFLOW)),
+            ),
+        )
+        negative_a = _if_else(
+            b_gt_zero,
+            _guard_if(neg_pos_overflow, _trap(TRAP_I64_OVERFLOW)),
+            _if_else(
+                b_lt_zero,
+                _guard_if(neg_neg_overflow, _trap(TRAP_I64_OVERFLOW)),
+            ),
+        )
+
+        return (
+            _if_else(
+                a_gt_zero,
+                positive_a,
+                _if_else(a_lt_zero, negative_a),
+            )
+            + self._arg(a)
+            + self._arg(b)
+            + _op(0x7E)
+            + _local_set(dest)
+        )
 
     def _checked_div(self, op: dict[str, Any]) -> bytes:
         a, b = op["args"]
@@ -283,9 +360,7 @@ class _FunctionCompiler:
         if name == "i64.sub":
             return self._checked_sub(op)
         if name == "i64.mul":
-            raise CompilationError(
-                "WASM scalar backend has not implemented checked i64.mul yet"
-            )
+            return self._checked_mul(op)
         if name == "i64.div":
             return self._checked_div(op)
         if name == "i64.rem":
