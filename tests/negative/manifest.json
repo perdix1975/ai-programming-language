@@ -172,5 +172,29 @@
     "contains": [
       "function contracts require APL 0.0.11"
     ]
+  },
+  {
+    "file": "v011_range_gate.apl",
+    "contains": [
+      "range types require APL 0.0.12"
+    ]
+  },
+  {
+    "file": "v012_invalid_range_bounds.apl",
+    "contains": [
+      "range min must not exceed max"
+    ]
+  },
+  {
+    "file": "v012_range_check_source_type.apl",
+    "contains": [
+      "range.check source must have type 'i64'"
+    ]
+  },
+  {
+    "file": "v012_range_value_source_type.apl",
+    "contains": [
+      "range.value source must be a range"
+    ]
   }
 ]
