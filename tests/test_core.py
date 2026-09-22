@@ -3,6 +3,7 @@ from apl.errors import CompilationError, ExecutionError, VerificationError
 from apl.host import DeterministicHost
 from apl.interpreter import run_program
 from apl.lir import lower_hash, lower_program, verify_lir
+from apl.lowering_proof import build_lowering_proof, lower_core_program, verify_lowering_proof
 from apl.optimize import optimize_lir, optimize_program
 from apl.primitives import lower_primitives, primitive_function_name, primitive_id
 from apl.resources import ResourceLimits
@@ -3927,5 +3928,103 @@ def test_v015_reserves_generated_primitive_function_namespace():
         verify_program(program)
     except VerificationError as exc:
         assert "function names beginning with '__apl_primitive_' are reserved" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+
+def test_v015_lowering_proof_roundtrip_is_deterministic_and_replay_verifiable():
+    source = semantic_primitive_program()
+    core = lower_core_program(source)
+    first = build_lowering_proof(source)
+    second = build_lowering_proof(source)
+
+    assert first == second
+    assert first["schema"] == "apl.lowering-proof.v1"
+    assert first["method"] == "deterministic-replay"
+    assert first["source_apl"] == "0.0.15"
+    assert first["source_hash"] == semantic_hash(source)
+    assert first["lowered_core_hash"] == semantic_hash(core)
+    assert first["primitive_mappings"] == [{
+        "primitive": PRIMITIVE_SQUARE_PLUS_ONE_ID,
+        "function": primitive_function_name(PRIMITIVE_SQUARE_PLUS_ONE_ID),
+    }]
+    assert first["call_sites"] == [{
+        "path": "functions[0].body[1]",
+        "primitive": PRIMITIVE_SQUARE_PLUS_ONE_ID,
+        "function": primitive_function_name(PRIMITIVE_SQUARE_PLUS_ONE_ID),
+    }]
+
+    verify_lowering_proof(source, core, first)
+
+
+def test_v015_lowering_proof_rejects_tampered_core_artifact():
+    source = semantic_primitive_program()
+    core = lower_core_program(source)
+    proof = build_lowering_proof(source)
+
+    main = next(fn for fn in core["functions"] if fn["name"] == "main")
+    main["body"][0]["value"] = 7
+
+    try:
+        verify_lowering_proof(source, core, proof)
+    except VerificationError as exc:
+        assert "lowered core artifact does not match deterministic replay" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_v015_lowering_proof_rejects_tampered_certificate():
+    source = semantic_primitive_program()
+    core = lower_core_program(source)
+    proof = build_lowering_proof(source)
+    proof["source_hash"] = "0" * 64
+
+    try:
+        verify_lowering_proof(source, core, proof)
+    except VerificationError as exc:
+        assert "lowering proof artifact does not match deterministic replay" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_v015_lowering_proof_records_nested_primitive_call_paths():
+    source = semantic_primitive_program()
+    source["functions"][0]["body"] = [
+        {"op": "const", "id": "x", "type": "i64", "value": 6},
+        {"op": "const", "id": "flag", "type": "bool", "value": True},
+        {
+            "op": "if",
+            "id": "answer",
+            "type": "i64",
+            "cond": "flag",
+            "then": [
+                {
+                    "op": "primitive.call",
+                    "id": "nested",
+                    "type": "i64",
+                    "primitive": PRIMITIVE_SQUARE_PLUS_ONE_ID,
+                    "args": ["x"],
+                },
+                {"op": "yield", "value": "nested"},
+            ],
+            "else": [{"op": "yield", "value": "x"}],
+        },
+        {"op": "return", "value": "answer"},
+    ]
+    proof = build_lowering_proof(source)
+    assert proof["call_sites"] == [{
+        "path": "functions[0].body[2].then[0]",
+        "primitive": PRIMITIVE_SQUARE_PLUS_ONE_ID,
+        "function": primitive_function_name(PRIMITIVE_SQUARE_PLUS_ONE_ID),
+    }]
+
+
+def test_lowering_proof_rejects_pre_v015_programs():
+    source = invariant_program()
+    try:
+        build_lowering_proof(source)
+    except VerificationError as exc:
+        assert "lowering proof certificates require APL 0.0.15" in str(exc)
     else:
         raise AssertionError("expected VerificationError")
