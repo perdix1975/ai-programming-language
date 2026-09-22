@@ -3,6 +3,7 @@ from apl.errors import CompilationError, ExecutionError, VerificationError
 from apl.host import DeterministicHost
 from apl.interpreter import run_program
 from apl.lir import lower_hash, lower_program, verify_lir
+from apl.optimize import optimize_lir
 from apl.resources import ResourceLimits
 from apl.verify import verify_program
 from apl.wasm import WASM_MAGIC_VERSION, compile_program_to_wasm
@@ -3576,3 +3577,111 @@ def test_wasm_backend_compiles_verified_multi_block_cfg():
     artifact = compile_program_to_wasm(functions_if_program())
     assert artifact.binary.startswith(WASM_MAGIC_VERSION)
     assert artifact.entry_export == "apl_entry"
+
+
+
+def _count_lir_ops(lir, op_name):
+    return sum(
+        1
+        for fn in lir["functions"]
+        for block in fn["blocks"]
+        for op in block["ops"]
+        if op["op"] == op_name
+    )
+
+
+def test_lir_optimizer_folds_safe_constants_without_changing_step_ticks():
+    source = wasm_scalar_program()
+    lir = lower_program(source)
+    optimized = optimize_lir(lir)
+
+    assert _count_lir_ops(lir, "i64.add") == 1
+    assert _count_lir_ops(optimized, "i64.add") == 0
+    assert any(
+        op.get("op") == "const"
+        and op.get("id") == "v2"
+        and op.get("value") == 42
+        for block in optimized["functions"][0]["blocks"]
+        for op in block["ops"]
+    )
+    assert (
+        _count_lir_ops(lir, "budget.step")
+        == _count_lir_ops(optimized, "budget.step")
+    )
+    verify_lir(optimized)
+
+
+def test_lir_optimizer_is_deterministic_and_idempotent():
+    lir = lower_program(wasm_scalar_program())
+    first = optimize_lir(lir)
+    second = optimize_lir(lir)
+    assert first == second
+    assert optimize_lir(first) == first
+
+
+def test_lir_optimizer_does_not_fold_overflowing_integer_arithmetic():
+    program = {
+        "apl": "0.0.3",
+        "module": "overflow_optimizer",
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "body": [
+                {
+                    "op": "const",
+                    "id": "a",
+                    "type": "i64",
+                    "value": 9223372036854775807,
+                },
+                {"op": "const", "id": "b", "type": "i64", "value": 1},
+                {
+                    "op": "add",
+                    "id": "answer",
+                    "type": "i64",
+                    "args": ["a", "b"],
+                },
+                {"op": "return", "value": "answer"},
+            ],
+        }],
+    }
+    optimized = optimize_lir(lower_program(program))
+    assert _count_lir_ops(optimized, "i64.add") == 1
+
+
+def test_lir_optimizer_does_not_fold_division_by_zero():
+    program = {
+        "apl": "0.0.3",
+        "module": "divzero_optimizer",
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "body": [
+                {"op": "const", "id": "a", "type": "i64", "value": 7},
+                {"op": "const", "id": "b", "type": "i64", "value": 0},
+                {
+                    "op": "div",
+                    "id": "answer",
+                    "type": "i64",
+                    "args": ["a", "b"],
+                },
+                {"op": "return", "value": "answer"},
+            ],
+        }],
+    }
+    optimized = optimize_lir(lower_program(program))
+    assert _count_lir_ops(optimized, "i64.div") == 1
+
+
+def test_optimized_wasm_is_deterministic_and_materially_optimized():
+    source = wasm_scalar_program()
+    baseline = compile_program_to_wasm(source)
+    optimized_a = compile_program_to_wasm(source, optimize=True)
+    optimized_b = compile_program_to_wasm(source, optimize=True)
+
+    assert optimized_a.binary == optimized_b.binary
+    assert optimized_a.binary.startswith(WASM_MAGIC_VERSION)
+    assert optimized_a.binary != baseline.binary
