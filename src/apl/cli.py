@@ -12,6 +12,7 @@ from .interpreter import run_program
 from .lir import lower_hash, lower_program, verify_lir
 from .resources import ResourceLimits
 from .verify import verify_program
+from .wasm import compile_program_to_wasm
 
 
 def _load(path: str) -> dict[str, Any]:
@@ -84,6 +85,13 @@ def main() -> int:
     p_verify_lir = sub.add_parser("verify-lir", help="verify normalized compiler LIR")
     p_verify_lir.add_argument("file")
 
+    p_compile_wasm = sub.add_parser(
+        "compile-wasm",
+        help="compile supported verified APL to a WebAssembly 1.0 binary",
+    )
+    p_compile_wasm.add_argument("file")
+    p_compile_wasm.add_argument("output")
+
     args = parser.parse_args()
 
     try:
@@ -113,6 +121,10 @@ def main() -> int:
         elif args.command == "verify-lir":
             verify_lir(program)
             print("valid")
+        elif args.command == "compile-wasm":
+            artifact = compile_program_to_wasm(program)
+            Path(args.output).write_bytes(artifact.binary)
+            print(f"wrote {len(artifact.binary)} bytes to {args.output}")
         return 0
     except (AplError, ValueError, OSError, json.JSONDecodeError) as exc:
         print(f"APL error: {exc}")
