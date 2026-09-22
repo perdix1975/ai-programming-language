@@ -141,4 +141,4 @@ The command verifies source APL, lowers it to verified LIR, compiles the support
 
 CI loads emitted binaries with the native Node/WebAssembly runtime and checks compiled results for arithmetic, calls, structured control, strings, arrays, records, host effects, all three resource budgets, contracts, ranges, quantities and invariants. It also validates deterministic built-in trap codes, exact application-trap diagnostics, capability denial and fixture-backed host I/O.
 
-The core semantic WASM backend surface is now implemented. Remaining M4 work centers on systematic interpreter-vs-compiled differential testing and optimization-equivalence validation.
+The core semantic WASM backend surface is implemented. M4 equivalence is enforced by the manifest-driven suite described in `OPTIMIZATION_AND_DIFFERENTIAL.md`: both baseline and optimized WASM must match the reference interpreter.

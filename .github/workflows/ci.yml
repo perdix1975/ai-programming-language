@@ -68,6 +68,10 @@ jobs:
             apl verify-lir "/tmp/$example.lir.json"
           done
           test -n "$(apl lower-hash examples/invariants.apl)"
+          apl optimize-lir examples/arithmetic.apl > /tmp/arithmetic.opt.lir.json
+          apl verify-lir /tmp/arithmetic.opt.lir.json
+          apl compile-wasm examples/wasm_scalar.apl /tmp/wasm_scalar_opt_cli.wasm --optimize
+          test -s /tmp/wasm_scalar_opt_cli.wasm
       - name: Compile and execute WebAssembly scalar backend
         run: |
           apl verify examples/wasm_scalar.apl
@@ -376,6 +380,28 @@ jobs:
             }
           });
           NODE
+
+      - name: Differential interpreter vs baseline and optimized WebAssembly
+        run: |
+          rm -rf /tmp/apl-differential-wasm /tmp/apl-differential-wasm-opt
+          python tests/differential_reference.py \
+            tests/differential_manifest.json \
+            /tmp/apl-differential-reference.json
+          python tests/differential_compile.py \
+            tests/differential_manifest.json \
+            /tmp/apl-differential-wasm
+          python tests/differential_compile.py \
+            tests/differential_manifest.json \
+            /tmp/apl-differential-wasm-opt \
+            --optimize
+          node tests/differential_wasm.js \
+            tests/differential_manifest.json \
+            /tmp/apl-differential-reference.json \
+            /tmp/apl-differential-wasm
+          node tests/differential_wasm.js \
+            tests/differential_manifest.json \
+            /tmp/apl-differential-reference.json \
+            /tmp/apl-differential-wasm-opt
 
       - name: Run successful examples
         run: |

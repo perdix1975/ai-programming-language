@@ -1179,5 +1179,14 @@ def compile_lir_to_wasm(lir: dict[str, Any]) -> WasmArtifact:
     )
 
 
-def compile_program_to_wasm(program: dict[str, Any]) -> WasmArtifact:
-    return compile_lir_to_wasm(lower_program(program))
+def compile_program_to_wasm(
+    program: dict[str, Any],
+    *,
+    optimize: bool = False,
+) -> WasmArtifact:
+    lir = lower_program(program)
+    if optimize:
+        from .optimize import optimize_lir
+
+        lir = optimize_lir(lir)
+    return compile_lir_to_wasm(lir)

@@ -174,6 +174,65 @@ async function instantiateAplWasm(path, options = {}) {
     throw new Error(`struct_eq requires array/record descriptor, got ${JSON.stringify(type)}`);
   }
 
+  function decodeSlotValue(type, slot) {
+    if (type === "i64") {
+      return slotSignedI64(slot).toString();
+    }
+    if (type === "bool") {
+      return Number(slot & 0xffffffffn) !== 0;
+    }
+    if (type === "string") {
+      return decodeString(slotSignedI64(slot));
+    }
+    if (type && typeof type === "object") {
+      if ("range" in type || "quantity" in type) {
+        return slotSignedI64(slot).toString();
+      }
+      if ("array" in type || "record" in type) {
+        return decodeValue(type, slotPointer(slot));
+      }
+    }
+    throw new Error(`unsupported slot decode type: ${JSON.stringify(type)}`);
+  }
+
+  function decodeValue(type, value) {
+    if (type === "unit") return null;
+    if (type === "i64") return BigInt(value).toString();
+    if (type === "bool") return Boolean(value);
+    if (type === "string") return decodeString(BigInt(value));
+
+    if (type && typeof type === "object") {
+      if ("range" in type || "quantity" in type) {
+        return BigInt(value).toString();
+      }
+      if ("array" in type && "len" in type) {
+        const pointer = Number(value) >>> 0;
+        const result = [];
+        for (let index = 0; index < type.len; index += 1) {
+          result.push(
+            decodeSlotValue(type.array, readSlot(pointer, index * 8))
+          );
+        }
+        return result;
+      }
+      if ("record" in type) {
+        const pointer = Number(value) >>> 0;
+        const result = {};
+        const fields = Object.keys(type.record).sort();
+        for (let index = 0; index < fields.length; index += 1) {
+          const field = fields[index];
+          result[field] = decodeSlotValue(
+            type.record[field],
+            readSlot(pointer, index * 8)
+          );
+        }
+        return result;
+      }
+    }
+
+    throw new Error(`unsupported WASM result type: ${JSON.stringify(type)}`);
+  }
+
   const imports = {
     apl: {
       trap(code) {
@@ -273,6 +332,7 @@ async function instantiateAplWasm(path, options = {}) {
     instance,
     state,
     decodeString,
+    decodeValue,
     allocateString,
   };
 }
