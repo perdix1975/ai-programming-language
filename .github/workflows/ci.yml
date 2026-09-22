@@ -76,6 +76,10 @@ jobs:
           apl compile-wasm examples/wasm_if.apl /tmp/wasm_if.wasm
           apl compile-wasm examples/wasm_repeat.apl /tmp/wasm_repeat.wasm
           apl compile-wasm examples/wasm_steps_ok.apl /tmp/wasm_steps_ok.wasm
+          apl compile-wasm examples/contracts.apl /tmp/contracts.wasm
+          apl compile-wasm examples/ranges.apl /tmp/ranges.wasm
+          apl compile-wasm examples/quantities.apl /tmp/quantities.wasm
+          apl compile-wasm examples/invariants.apl /tmp/invariants.wasm
           node - <<'NODE'
           const fs = require("fs");
           const bytes = fs.readFileSync("/tmp/wasm_scalar.wasm");
@@ -98,8 +102,12 @@ jobs:
             run("/tmp/wasm_mul.wasm"),
             run("/tmp/wasm_if.wasm"),
             run("/tmp/wasm_repeat.wasm"),
-            run("/tmp/wasm_steps_ok.wasm")
-          ]).then(([addValue, mulValue, ifValue, repeatValue, stepsValue]) => {
+            run("/tmp/wasm_steps_ok.wasm"),
+            run("/tmp/contracts.wasm"),
+            run("/tmp/ranges.wasm"),
+            run("/tmp/quantities.wasm"),
+            run("/tmp/invariants.wasm")
+          ]).then(([addValue, mulValue, ifValue, repeatValue, stepsValue, contractValue, rangeValue, quantityValue, invariantValue]) => {
             if (addValue !== 42n) {
               throw new Error(`expected add 42n, got ${addValue}`);
             }
@@ -115,6 +123,18 @@ jobs:
             if (stepsValue !== 42n) {
               throw new Error(`expected step-budget result 42n, got ${stepsValue}`);
             }
+            if (contractValue !== 6n) {
+              throw new Error(`expected contracts 6n, got ${contractValue}`);
+            }
+            if (rangeValue !== 42n) {
+              throw new Error(`expected ranges 42n, got ${rangeValue}`);
+            }
+            if (quantityValue !== 5n) {
+              throw new Error(`expected quantities 5n, got ${quantityValue}`);
+            }
+            if (invariantValue !== 5n) {
+              throw new Error(`expected invariants 5n, got ${invariantValue}`);
+            }
           });
           NODE
 
@@ -126,6 +146,9 @@ jobs:
           apl compile-wasm examples/wasm_repeat_negative.apl /tmp/wasm_repeat_negative.wasm
           apl compile-wasm examples/wasm_repeat_exceeds.apl /tmp/wasm_repeat_exceeds.wasm
           apl compile-wasm examples/wasm_steps_fail.apl /tmp/wasm_steps_fail.wasm
+          apl compile-wasm examples/contracts_fail.apl /tmp/contracts_fail.wasm
+          apl compile-wasm examples/ranges_fail.apl /tmp/ranges_fail.wasm
+          apl compile-wasm examples/invariants_fail.apl /tmp/invariants_fail.wasm
           node - <<'NODE'
           const fs = require("fs");
           async function trapCode(path) {
@@ -156,8 +179,11 @@ jobs:
             trapCode("/tmp/wasm_divzero.wasm"),
             trapCode("/tmp/wasm_repeat_negative.wasm"),
             trapCode("/tmp/wasm_repeat_exceeds.wasm"),
-            trapCode("/tmp/wasm_steps_fail.wasm")
-          ]).then(([overflow, mulOverflow, divzero, repeatNegative, repeatExceeds, stepsExhausted]) => {
+            trapCode("/tmp/wasm_steps_fail.wasm"),
+            trapCode("/tmp/contracts_fail.wasm"),
+            trapCode("/tmp/ranges_fail.wasm"),
+            trapCode("/tmp/invariants_fail.wasm")
+          ]).then(([overflow, mulOverflow, divzero, repeatNegative, repeatExceeds, stepsExhausted, preconditionFailed, rangeFailed, invariantFailed]) => {
             if (overflow !== 1) {
               throw new Error(`expected overflow trap 1, got ${overflow}`);
             }
@@ -175,6 +201,15 @@ jobs:
             }
             if (stepsExhausted !== 5) {
               throw new Error(`expected steps trap 5, got ${stepsExhausted}`);
+            }
+            if (preconditionFailed !== 6) {
+              throw new Error(`expected precondition trap 6, got ${preconditionFailed}`);
+            }
+            if (rangeFailed !== 9) {
+              throw new Error(`expected range trap 9, got ${rangeFailed}`);
+            }
+            if (invariantFailed !== 8) {
+              throw new Error(`expected invariant trap 8, got ${invariantFailed}`);
             }
           });
           NODE
