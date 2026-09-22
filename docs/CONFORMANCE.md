@@ -68,3 +68,24 @@ M4 adds a data-driven compiler-equivalence corpus in `tests/differential_manifes
 `tests/run_differential.py` evaluates each case with the reference interpreter, compiles both baseline normalized LIR and deterministically optimized LIR to WebAssembly, and requires both compiled executions to match the interpreter's normalized return/trap outcome and completed output lines.
 
 The optimizer is additionally required to be deterministic, idempotent, independently LIR-verifiable, and exercised by at least one real transformation in the corpus. See `docs/COMPILER_EQUIVALENCE.md`.
+
+
+## Semantic primitive conformance
+
+Draft 0.0.15 adds content-addressed pure semantic primitives.
+
+Conformance covers:
+
+- deterministic `p_<sha256>` identifier generation from canonical primitive content;
+- rejection when a declared primitive id does not match its canonical semantic content;
+- exact `primitive.call` schema for value and unit results;
+- unknown primitive rejection;
+- rejection of function or primitive calls inside primitive definitions;
+- rejection of effectful primitive bodies through the existing exact-effect verifier;
+- reserved generated-function namespace enforcement;
+- reuse of ordinary core call arity/result-type verification after lowering;
+- deterministic lowering to hidden core functions;
+- absence of `primitive.call` from normalized LIR;
+- interpreter, baseline WASM, and optimized WASM equivalence for `examples/semantic_primitives.apl`.
+
+The file-based negative corpus also includes pre-0.0.15 declaration gating, missing primitive lists, forged ids, unknown primitive calls, and non-self-contained primitive bodies.
