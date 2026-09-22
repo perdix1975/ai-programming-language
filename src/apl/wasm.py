@@ -182,6 +182,7 @@ class _FunctionCompiler:
         self.signatures = signatures
         self.step_global_index = step_global_index
         self.heap_global_index = heap_global_index
+        self.scratch_i32_index: int | None = None
         self.types: dict[str, Any] = {
             param["id"]: param["type"] for param in fn["params"]
         }
@@ -425,14 +426,80 @@ class _FunctionCompiler:
             + _local_set(dest)
         )
 
+    def _string_equality(self, op: dict[str, Any]) -> bytes:
+        if self.scratch_i32_index is None:
+            raise CompilationError("string equality scratch local is unavailable")
+        a, b = op["args"]
+        dest = self._index(op["id"])
+        scratch = self.scratch_i32_index
+
+        len_a = self._arg(a) + _op(0x28, _memarg(2, 0))
+        len_b = self._arg(b) + _op(0x28, _memarg(2, 0))
+        lengths_equal = len_a + len_b + _op(0x46)
+
+        init = (
+            _op(0x41, _sleb(1, 32))
+            + _local_set(dest)
+            + _op(0x41, _sleb(0, 32))
+            + _local_set(scratch)
+        )
+
+        finished = (
+            _local_get(scratch)
+            + len_a
+            + _op(0x4F)
+        )
+
+        byte_a = (
+            self._arg(a)
+            + _op(0x41, _sleb(4, 32), 0x6A)
+            + _local_get(scratch)
+            + _op(0x6A, 0x2D, _memarg(0, 0))
+        )
+        byte_b = (
+            self._arg(b)
+            + _op(0x41, _sleb(4, 32), 0x6A)
+            + _local_get(scratch)
+            + _op(0x6A, 0x2D, _memarg(0, 0))
+        )
+        mismatch_body = (
+            _op(0x41, _sleb(0, 32))
+            + _local_set(dest)
+            + _op(0x0C, _u32(2))
+        )
+        compare = _guard_if(byte_a + byte_b + _op(0x47), mismatch_body)
+        increment = (
+            _local_get(scratch)
+            + _op(0x41, _sleb(1, 32), 0x6A)
+            + _local_set(scratch)
+            + _op(0x0C, _u32(0))
+        )
+        loop = (
+            _op(0x02, 0x40)
+            + _op(0x03, 0x40)
+            + finished
+            + _op(0x0D, _u32(1))
+            + compare
+            + increment
+            + _op(0x0B)
+            + _op(0x0B)
+        )
+        equal_body = init + loop
+        different_body = _op(0x41, _sleb(0, 32)) + _local_set(dest)
+        return _if_else(lengths_equal, equal_body, different_body)
+
     def _value_comparison(self, op: dict[str, Any]) -> bytes:
         a, b = op["args"]
         dest = self._index(op["id"])
         typ = self.types[a]
         name = op["op"]
-        if _is_memory_type(typ):
+        if typ == "string":
+            if name != "value.eq":
+                raise CompilationError("WASM strings support equality only")
+            return self._string_equality(op)
+        if _is_aggregate_type(typ):
             raise CompilationError(
-                "WASM structural equality for memory-backed values is not implemented yet"
+                "WASM aggregate structural equality is not implemented yet"
             )
         wasm_type = _value_type(typ)
         if name == "value.eq":
@@ -793,8 +860,10 @@ class _FunctionCompiler:
             )
 
         pc_index = param_count + len(local_types)
+        self.scratch_i32_index = pc_index + 1
         local_decls = [
             *[_u32(1) + bytes([typ]) for _, typ in local_types],
+            _u32(1) + bytes([WASM_I32]),
             _u32(1) + bytes([WASM_I32]),
         ]
         code = bytearray(_vec(local_decls))
