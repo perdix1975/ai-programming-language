@@ -44,6 +44,8 @@ jobs:
           apl verify examples/ranges.apl
           apl verify examples/ranges_fail.apl
           apl verify examples/quantities.apl
+          apl verify examples/invariants.apl
+          apl verify examples/invariants_fail.apl
       - name: Run successful examples
         run: |
           output="$(apl run examples/hello.apl)"
@@ -65,6 +67,8 @@ jobs:
           output="$(apl run examples/limits.apl)"
           test "$output" = '[return i64] 42'
           output="$(apl run examples/quantities.apl)"
+          test "$output" = '[return i64] 5'
+          output="$(apl run examples/invariants.apl)"
           test "$output" = '[return i64] 5'
           output="$(apl run examples/contracts.apl)"
           test "$output" = '[return i64] 6'
@@ -119,3 +123,12 @@ jobs:
           set -e
           test "$status" -eq 2
           test "$output" = 'APL error: [apl.range_violation] main[1]: value 101 is outside range [0, 100]'
+
+      - name: Enforce reusable invariant checks
+        run: |
+          set +e
+          output="$(apl run examples/invariants_fail.apl)"
+          status=$?
+          set -e
+          test "$status" -eq 2
+          test "$output" = "APL error: [apl.invariant_failed] main[1]: invariant 'positive' failed: x must be positive"
