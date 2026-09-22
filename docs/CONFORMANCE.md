@@ -59,3 +59,12 @@ The initial corpus covers:
 - invalid invariant-check argument typing and disallowed invariant-to-invariant definitions.
 
 The corpus should grow whenever a verifier bug, ambiguity, or new language rule is introduced.
+
+
+## Compiler differential conformance
+
+M4 adds a data-driven compiler-equivalence corpus in `tests/differential_manifest.json`.
+
+`tests/run_differential.py` evaluates each case with the reference interpreter, compiles both baseline normalized LIR and deterministically optimized LIR to WebAssembly, and requires both compiled executions to match the interpreter's normalized return/trap outcome and completed output lines.
+
+The optimizer is additionally required to be deterministic, idempotent, independently LIR-verifiable, and exercised by at least one real transformation in the corpus. See `docs/COMPILER_EQUIVALENCE.md`.
