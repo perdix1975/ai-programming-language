@@ -99,6 +99,17 @@ def _storage_size(typ: Any) -> int:
     return 8 if _value_type(typ) == WASM_I64 else 4
 
 
+def _memory_depth(typ: Any) -> int:
+    if typ == "string":
+        return 1
+    if _is_array_type(typ):
+        return 1 + _memory_depth(typ["array"])
+    if _is_record_type(typ):
+        fields = list(typ["record"].values())
+        return 1 + (max((_memory_depth(field) for field in fields), default=0))
+    return 0
+
+
 def _record_layout(typ: Any) -> dict[str, tuple[int, Any]]:
     if not _is_record_type(typ):
         raise CompilationError(f"expected record type, got {typ!r}")
@@ -182,7 +193,7 @@ class _FunctionCompiler:
         self.signatures = signatures
         self.step_global_index = step_global_index
         self.heap_global_index = heap_global_index
-        self.scratch_i32_index: int | None = None
+        self.scratch_i32_indices: list[int] = []
         self.types: dict[str, Any] = {
             param["id"]: param["type"] for param in fn["params"]
         }
@@ -860,11 +871,18 @@ class _FunctionCompiler:
             )
 
         pc_index = param_count + len(local_types)
-        self.scratch_i32_index = pc_index + 1
+        scratch_count = max(
+            1,
+            max((_memory_depth(typ) for typ in self.types.values()), default=0),
+        )
+        self.scratch_i32_indices = [
+            pc_index + 1 + offset
+            for offset in range(scratch_count)
+        ]
         local_decls = [
             *[_u32(1) + bytes([typ]) for _, typ in local_types],
             _u32(1) + bytes([WASM_I32]),
-            _u32(1) + bytes([WASM_I32]),
+            *[_u32(1) + bytes([WASM_I32]) for _ in range(scratch_count)],
         ]
         code = bytearray(_vec(local_decls))
 
