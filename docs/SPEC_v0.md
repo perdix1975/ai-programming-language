@@ -1,6 +1,6 @@
 # APL Specification v0
 
-Status: **Draft 0.0.13**
+Status: **Draft 0.0.14**
 
 This document defines the executable v0 subset of APL. The purpose of v0 is to establish stable semantic machinery before adding richer type invariants, concurrency, or native compilation.
 
@@ -22,7 +22,8 @@ The current reference implementation supports:
 - `0.0.10`: a strict extension adding deterministic execution resource budgets and host-side tightening;
 - `0.0.11`: a strict extension adding typed declarative function preconditions and postconditions;
 - `0.0.12`: a strict extension adding structural bounded `i64` range types and explicit refinement/widening;
-- `0.0.13`: a strict extension adding symbolic structural quantity types and static unit-exponent algebra.
+- `0.0.13`: a strict extension adding symbolic structural quantity types and static unit-exponent algebra;
+- `0.0.14`: a strict extension adding reusable typed module invariants for contracts and explicit IR checks.
 
 Older programs retain their declared-version meaning. An operation is valid only when introduced by that program's declared version or an earlier one.
 
@@ -37,7 +38,8 @@ A program object contains:
 - `entry`: entry function name;
 - `functions`: non-empty list of function objects;
 - `capabilities`: in Draft 0.0.8+, the exact sorted list of host capabilities required by the module;
-- `limits`: in Draft 0.0.10+, the exact deterministic execution-budget object.
+- `limits`: in Draft 0.0.10+, the exact deterministic execution-budget object;
+- `invariants`: in Draft 0.0.14+, the ordered module-level reusable invariant definitions.
 
 The entry function must exist and require zero parameters.
 
@@ -1092,7 +1094,168 @@ These can be layered later without changing the meaning of the structural expone
 
 APL 0.0.1 through 0.0.12 do not recognize quantity type descriptors or `quantity.*` operations. Use before 0.0.13 is rejected by verification.
 
-## 19. Verification
+## 19. Draft 0.0.14 reusable machine-checkable invariants
+
+### 19.1 module invariant declarations
+
+Every Draft 0.0.14+ program contains an explicit `invariants` list, even when empty.
+
+An invariant definition has exactly:
+
+```json
+{
+  "name": "positive",
+  "params": [
+    {"name": "x", "type": "i64"}
+  ],
+  "message": "x must be positive",
+  "predicate": {
+    "op": "gt",
+    "args": [
+      {"var": "x"},
+      {"const": {"type": "i64", "value": 0}}
+    ]
+  }
+}
+```
+
+Rules:
+
+- at most 128 invariants per module;
+- invariant names match `[a-z][a-z0-9_.-]{0,63}` and are unique;
+- each invariant has at most 16 parameters;
+- parameter names are non-empty and unique within the invariant;
+- parameter types may be any valid non-`unit` APL type;
+- the human message contains 1 through 512 Unicode code points;
+- the predicate is a pure typed predicate whose root type is `bool`.
+
+Invariant declarations are canonical APL IR and therefore participate in canonical encoding and program identity/hash.
+
+### 19.2 invariant definition scope
+
+Within an invariant definition, `{"var":"name"}` may reference only that invariant's parameters.
+
+A module invariant has no function result, so `{"result":true}` is invalid.
+
+Draft 0.0.14 deliberately forbids invariant definitions from invoking named invariants. Therefore the dependency graph between invariant definitions is empty: no direct recursion, mutual recursion, or hidden transitive cycle can occur.
+
+This restriction may be relaxed by a future draft with an explicitly verified acyclic invariant dependency graph.
+
+### 19.3 invariant references in contracts
+
+Draft 0.0.14 extends the pure contract predicate language with an invariant-reference node:
+
+```json
+{
+  "invariant": "positive",
+  "args": [
+    {"var": "x"}
+  ]
+}
+```
+
+The named invariant must exist. Argument count and argument types must exactly match the invariant's declared parameter list. Each argument is itself a contract predicate expression and is evaluated left-to-right.
+
+The invariant-reference node has type `bool`, so it may be used directly as a contract predicate or nested inside `not`, `and`, `or`, or another ordinary predicate operator.
+
+A contract invariant reference does not become a function call, add a host effect, or require a capability.
+
+### 19.4 explicit `invariant.check`
+
+Reusable invariants may also be enforced at arbitrary verified SSA points:
+
+```json
+{
+  "op": "invariant.check",
+  "invariant": "positive",
+  "args": ["x"]
+}
+```
+
+The instruction contains exactly `op`, `invariant`, and `args`.
+
+Verification requires:
+
+- Draft 0.0.14+;
+- the named invariant to exist;
+- exact argument arity;
+- every argument to be an SSA id whose static type exactly matches the corresponding invariant parameter type.
+
+`invariant.check` produces no SSA value and does not refine or change any argument's static type.
+
+If the invariant evaluates to false, execution traps with:
+
+```text
+apl.invariant_failed
+```
+
+The trap location is the `invariant.check` instruction. The diagnostic message contains the invariant name and its declared message.
+
+A successful check continues execution without mutating any value.
+
+### 19.5 runtime evaluation and purity
+
+Invariant predicates use the same pure predicate semantics as Draft 0.0.11 contracts:
+
+- primitive constants;
+- parameter variables;
+- `eq`;
+- typed ordered comparisons;
+- `not`, `and`, and `or`.
+
+Their Boolean operators remain eager and left-to-right.
+
+Invariant definitions cannot print, call APL functions, access host resources, mutate values, iterate, or explicitly trap.
+
+The only runtime failures possible while evaluating a verified invariant are resource-limit exhaustion or the enclosing semantic failure (`apl.invariant_failed`, `apl.precondition_failed`, or `apl.postcondition_failed`).
+
+### 19.6 use from function contracts
+
+A named invariant referenced from `requires` or `ensures` participates in ordinary contract semantics:
+
+- a false invariant inside a precondition produces `apl.precondition_failed`, not `apl.invariant_failed`;
+- a false invariant inside a postcondition produces `apl.postcondition_failed`;
+- a direct `invariant.check` produces `apl.invariant_failed`.
+
+Thus the same reusable predicate can be reused in different enforcement contexts while the trap code identifies which semantic boundary failed.
+
+### 19.7 structured regions and function calls
+
+`invariant.check` is an ordinary non-terminating instruction and may appear wherever other ordinary instructions may appear, including selected `if` branches and `repeat` bodies.
+
+The module invariant registry is available consistently across nested function calls and structured regions.
+
+### 19.8 deterministic resource accounting
+
+An executed `invariant.check` consumes one ordinary Draft 0.0.10 `steps` unit before invariant evaluation begins.
+
+Each evaluated predicate node inside the invariant then consumes one additional `steps` unit under the Draft 0.0.11 predicate-accounting rules.
+
+For a contract invariant reference:
+
+1. the invariant-reference predicate node consumes one step;
+2. each argument predicate expression consumes its ordinary predicate-node steps;
+3. the referenced invariant's predicate nodes consume their own steps.
+
+Invariant declaration metadata itself consumes no runtime steps.
+
+If the step budget is exhausted before an invariant predicate completes, `apl.resource_limit` occurs before the semantic invariant/contract failure is determined.
+
+### 19.9 no implicit refinement semantics
+
+A successful invariant check does **not** create a new type, attach proof metadata to the SSA value, or cause the verifier to assume the invariant later.
+
+Draft 0.0.14 therefore provides reusable executable assertions, not dependent/refinement proof propagation.
+
+The existing Draft 0.0.12 range types remain the only built-in value-refinement type mechanism in v0.
+
+### 19.10 compatibility
+
+APL 0.0.1 through 0.0.13 do not contain a module `invariants` declaration. Declaring that field before 0.0.14 is rejected.
+
+Draft 0.0.14 programs must contain the explicit invariant list. Invariant-reference predicate nodes and `invariant.check` are valid only under Draft 0.0.14 semantics.
+
+## 20. Verification
 
 A conforming verifier rejects at least:
 
@@ -1113,11 +1276,12 @@ A conforming verifier rejects at least:
 - duplicate function-local contract identifiers;
 - malformed or out-of-bounds range descriptors and invalid explicit range conversions;
 - malformed quantity descriptors, incompatible quantity operands, or incorrect derived quantity types;
+- malformed, duplicate, ill-typed, or out-of-scope invariant definitions/references;
 - use of an operation before the language version that introduced it.
 
 Execution is defined only for verified programs.
 
-## 20. Canonical textual representation
+## 21. Canonical textual representation
 
 The v0 canonical encoding is JSON with:
 
@@ -1131,11 +1295,11 @@ Canonical identity is SHA-256 over the UTF-8 bytes of that encoding.
 
 This is an encoding identity, not yet a proof of semantic equivalence between differently structured programs.
 
-## 21. Reference implementation
+## 22. Reference implementation
 
 The Python implementation under `src/apl` is the executable reference for the current draft. Tests under `tests/` form a growing conformance suite.
 
-## 22. Deliberately absent
+## 23. Deliberately absent
 
 Not yet defined:
 
@@ -1143,7 +1307,7 @@ Not yet defined:
 - unbounded/general loops;
 - algebraic data types;
 - trap recovery, handlers, and resumable exceptions;
-- general predicate-backed refinement types and reusable type invariants;
+- implicit proof-carrying/dependent refinement propagation from reusable invariants;
 - unit registries, aliases, scaling/conversion tables, and affine units;
 - live filesystem/network adapters and database capability semantics;
 - file/network/database access;
