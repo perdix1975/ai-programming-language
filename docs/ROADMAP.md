@@ -42,7 +42,7 @@
 ## M4 — Compiler path
 
 - [x] normalized lower IR with deterministic CFG/block-parameter SSA and independent verifier
-- [ ] WASM backend
+- [x] WASM backend
   - [x] real WebAssembly 1.0 binary emitter for pure scalar single-block LIR
   - [x] checked add/sub/div/rem trap ABI and native Node execution test
   - [x] checked multiplication
@@ -50,8 +50,8 @@
   - [x] bounded `repeat` runtime guards
   - [x] module-wide `steps` resource budget
   - [x] contract/invariant guards plus range/quantity scalar lowering
-  - [ ] strings, arrays, records and explicit application-trap diagnostics
-  - [ ] host effects plus output/host-read budgets
+  - [x] UTF-8 strings, immutable arrays/records, recursive structural equality and exact application-trap diagnostics
+  - [x] host effects, versioned capability grants, and output/host-read budgets
 - [ ] optimization equivalence tests
 - [ ] differential testing: interpreter vs compiled output
 

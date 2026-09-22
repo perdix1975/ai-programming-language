@@ -3543,13 +3543,33 @@ def test_wasm_backend_emits_real_deterministic_binary():
     assert len(first.binary) > len(WASM_MAGIC_VERSION)
 
 
-def test_wasm_backend_rejects_observable_effects_until_host_abi_exists():
-    try:
-        compile_program_to_wasm(effectful_program())
-    except CompilationError as exc:
-        assert "host capabilities" in str(exc) or "pure function" in str(exc)
-    else:
-        raise AssertionError("expected backend compilation failure")
+def test_wasm_backend_compiles_observable_effects_with_runtime_imports():
+    artifact = compile_program_to_wasm(effectful_program())
+    assert artifact.binary.startswith(WASM_MAGIC_VERSION)
+    assert artifact.entry_export == "apl_entry"
+
+
+def test_wasm_backend_compiles_string_equality_and_return_values():
+    program = {
+        "apl": "0.0.1",
+        "module": "wasm_strings",
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "bool",
+            "body": [
+                {"op": "const", "id": "a", "type": "string", "value": "Καλημέρα"},
+                {"op": "const", "id": "b", "type": "string", "value": "Καλημέρα"},
+                {"op": "eq", "id": "same", "type": "bool", "args": ["a", "b"]},
+                {"op": "return", "value": "same"},
+            ],
+        }],
+    }
+    first = compile_program_to_wasm(program)
+    second = compile_program_to_wasm(program)
+    assert first.binary == second.binary
+    assert first.binary.startswith(WASM_MAGIC_VERSION)
 
 
 def test_wasm_backend_compiles_verified_multi_block_cfg():

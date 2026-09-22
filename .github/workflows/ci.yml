@@ -138,6 +138,169 @@ jobs:
           });
           NODE
 
+      - name: Execute WebAssembly strings and deterministic host effects
+        run: |
+          apl compile-wasm examples/wasm_string_eq.apl /tmp/wasm_string_eq.wasm
+          apl compile-wasm examples/effects.apl /tmp/effects.wasm
+          apl compile-wasm examples/host_io.apl /tmp/host_io.wasm
+          apl compile-wasm examples/arrays.apl /tmp/arrays.wasm
+          apl compile-wasm examples/records.apl /tmp/records.wasm
+          apl compile-wasm examples/wasm_struct_eq.apl /tmp/wasm_struct_eq.wasm
+          apl compile-wasm examples/trap.apl /tmp/application_trap.wasm
+          apl compile-wasm examples/wasm_output_limit_fail.apl /tmp/wasm_output_limit_fail.wasm
+          apl compile-wasm examples/wasm_host_read_limit_fail.apl /tmp/wasm_host_read_limit_fail.wasm
+          apl compile-wasm examples/wasm_array_oob.apl /tmp/wasm_array_oob.wasm
+          node - <<'NODE'
+          const {instantiateAplWasm} = require("./tests/wasm_runtime.js");
+
+          async function expectTrap(path, grants, expectedCode, options = {}) {
+            const runtime = await instantiateAplWasm(path, {
+              grants,
+              ...options,
+            });
+            try {
+              runtime.instance.exports.apl_entry();
+            } catch (err) {
+              if (runtime.state.trapCode !== expectedCode) {
+                throw new Error(
+                  `expected trap ${expectedCode}, got ${runtime.state.trapCode}: ${err}`
+                );
+              }
+              return;
+            }
+            throw new Error(`expected compiled trap ${expectedCode}`);
+          }
+
+          (async () => {
+            const strings = await instantiateAplWasm("/tmp/wasm_string_eq.wasm");
+            const same = strings.instance.exports.apl_entry();
+            if (same !== 1) {
+              throw new Error(`expected UTF-8 string equality true, got ${same}`);
+            }
+
+            const effects = await instantiateAplWasm("/tmp/effects.wasm", {
+              grants: ["console.write"],
+            });
+            const effectResult = effects.instance.exports.apl_entry();
+            if (effectResult !== 42n) {
+              throw new Error(`expected effects result 42n, got ${effectResult}`);
+            }
+            if (effects.state.output.join("\n") !== "hello from APL") {
+              throw new Error(`unexpected compiled output: ${effects.state.output}`);
+            }
+
+            const host = await instantiateAplWasm("/tmp/host_io.wasm", {
+              grants: ["console.write", "fs.read_text", "net.get_text"],
+              files: {"/message.txt": "local fixture"},
+              network: {"https://example.test/message": "network fixture"},
+            });
+            const hostResult = host.instance.exports.apl_entry();
+            const hostText = host.decodeString(hostResult);
+            if (hostText !== "local fixture") {
+              throw new Error(`expected local fixture return, got ${hostText}`);
+            }
+            if (host.state.output.join("\n") !== "local fixture\nnetwork fixture") {
+              throw new Error(`unexpected host output: ${host.state.output}`);
+            }
+
+            const arrays = await instantiateAplWasm("/tmp/arrays.wasm");
+            const arrayResult = arrays.instance.exports.apl_entry();
+            if (arrayResult !== 23n || arrays.state.output.join("\n") !== "23") {
+              throw new Error(
+                `unexpected compiled array result/output: ${arrayResult} / ${arrays.state.output}`
+              );
+            }
+
+            const records = await instantiateAplWasm("/tmp/records.wasm");
+            const recordResult = records.instance.exports.apl_entry();
+            if (recordResult !== 37n || records.state.output.join("\n") !== "37") {
+              throw new Error(
+                `unexpected compiled record result/output: ${recordResult} / ${records.state.output}`
+              );
+            }
+
+            const structuredEquality = await instantiateAplWasm(
+              "/tmp/wasm_struct_eq.wasm"
+            );
+            const structEqual = structuredEquality.instance.exports.apl_entry();
+            if (structEqual !== 1) {
+              throw new Error(
+                `expected nested structural equality true, got ${structEqual}`
+              );
+            }
+
+            const explicitTrap = await instantiateAplWasm(
+              "/tmp/application_trap.wasm"
+            );
+            try {
+              explicitTrap.instance.exports.apl_entry();
+              throw new Error("expected application trap");
+            } catch (err) {
+              if (
+                err.aplCode !== "app.demo"
+                || err.aplMessage !== "demonstration trap"
+                || err.aplWhere !== "main[0]"
+              ) {
+                throw err;
+              }
+            }
+
+            const denied = await instantiateAplWasm("/tmp/effects.wasm");
+            try {
+              denied.instance.exports.apl_entry();
+              throw new Error("expected capability denial");
+            } catch (err) {
+              if (err.aplCode !== "apl.capability_denied") throw err;
+            }
+
+            await expectTrap(
+              "/tmp/wasm_output_limit_fail.wasm",
+              ["console.write"],
+              5
+            );
+            const unavailable = await instantiateAplWasm(
+              "/tmp/wasm_host_read_limit_fail.wasm",
+              {
+                grants: ["fs.read_text"],
+                hostAvailable: false,
+              }
+            );
+            try {
+              unavailable.instance.exports.apl_entry();
+              throw new Error("expected host unavailable before host-read budget");
+            } catch (err) {
+              if (err.aplCode !== "apl.host_unavailable") throw err;
+            }
+
+            const missing = await instantiateAplWasm("/tmp/host_io.wasm", {
+              grants: ["console.write", "fs.read_text", "net.get_text"],
+              files: {},
+              network: {"https://example.test/message": "network fixture"},
+            });
+            try {
+              missing.instance.exports.apl_entry();
+              throw new Error("expected missing host resource");
+            } catch (err) {
+              if (err.aplCode !== "apl.host_resource_missing") throw err;
+            }
+
+            await expectTrap(
+              "/tmp/wasm_host_read_limit_fail.wasm",
+              ["fs.read_text"],
+              5,
+              {files: {"/message.txt": "unused"}}
+            );
+            await expectTrap(
+              "/tmp/wasm_array_oob.wasm",
+              [],
+              10
+            );
+          })().catch((err) => {
+            console.error(err);
+            process.exit(1);
+          });
+          NODE
+
       - name: Enforce WebAssembly scalar trap ABI
         run: |
           apl compile-wasm examples/wasm_overflow.apl /tmp/wasm_overflow.wasm

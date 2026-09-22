@@ -1,6 +1,6 @@
 # APL WebAssembly backend
 
-Status: **M4 scalar backend checkpoint**
+Status: **M4 executable backend checkpoint**
 
 The backend compiles verified APL through normalized LIR 0.1 into a real WebAssembly 1.0 binary.
 
@@ -19,7 +19,7 @@ normalized LIR 0.1
 LIR verifier
     |
     v
-WASM scalar backend
+WASM backend
     |
     v
 WebAssembly 1.0 binary
@@ -37,12 +37,16 @@ apl_entry
 
 It corresponds to the APL module entry function. Because APL entry functions have zero parameters, `apl_entry` has no WebAssembly parameters.
 
-APL types map as follows in the scalar checkpoint:
+APL values map to the current WebAssembly ABI as follows:
 
 | APL | WebAssembly |
 |---|---|
 | `i64` | `i64` |
 | `bool` | `i32` with canonical values 0/1 |
+| `string` | packed `i64` UTF-8 slice handle: `(ptr << 32) | byte_length` |
+| fixed array | `i32` immutable heap pointer; 8-byte element slots |
+| structural record | `i32` immutable heap pointer; sorted 8-byte field slots |
+| range / quantity | `i64` after static type verification |
 | `unit` | no result |
 
 ## Trap import ABI
@@ -63,42 +67,56 @@ Current deterministic trap codes are:
 | 2 | `apl.division_by_zero` |
 | 3 | `apl.repeat_negative_count` |
 | 4 | `apl.repeat_count_exceeds_max` |
-| 5 | `apl.resource_limit` for exhausted `steps` |
+| 5 | `apl.resource_limit` for exhausted `steps`, `output_lines`, or `host_reads` |
 | 6 | `apl.precondition_failed` |
 | 7 | `apl.postcondition_failed` |
 | 8 | `apl.invariant_failed` |
 | 9 | `apl.range_violation` |
+| 10 | `apl.array_index_oob` |
 
 The compiler emits an `unreachable` immediately after the import call so a nonconforming host that returns still cannot continue execution.
 
-## Supported LIR subset
+## Supported semantic surface
 
-The scalar checkpoint supports:
+The current backend supports:
 
-- scalar `i64` and `bool` constants;
-- checked `i64.add`, `i64.sub`, and `i64.mul`;
-- checked `i64.div` and `i64.rem`;
-- signed `i64` ordered comparisons;
-- scalar equality;
-- Boolean not/and/or;
-- pure function calls;
-- verified multi-block CFG with `br`/`cond_br` and typed block-parameter transfers;
+- `i64`, `bool`, UTF-8 `string`, bounded range and symbolic quantity values;
+- checked `i64.add/sub/mul/div/rem`;
+- signed comparisons, Boolean operators and equality;
+- content equality for strings and recursive structural equality for immutable arrays/records;
+- typed function calls;
+- verified multi-block CFG with `br`/`cond_br` and block-parameter transfers;
 - bounded `repeat` loops and their runtime count guards;
-- module-wide `steps` resource budgets shared across function calls;
-- contract and reusable-invariant guards;
-- bounded range refinement/widening represented as checked `i64`;
-- symbolic quantities represented as checked `i64` values with static type algebra already verified by LIR;
-- scalar/unit returns.
+- immutable fixed-length arrays with checked indexing and exact length;
+- immutable structural records with canonical sorted-field layout;
+- module-wide `steps`, `output_lines`, and `host_reads` resource budgets;
+- versioned capability enforcement for `console.write`, `fs.read_text`, and `net.get_text`;
+- deterministic fixture-backed host reads through the runtime ABI;
+- contracts, reusable invariants, range refinements and quantities;
+- application-defined traps preserving exact code, message and source location;
+- scalar, string, structured and unit function values.
 
-Compilation currently rejects:
+Unsupported future semantics fail at compile time with `CompilationError`; the backend does not silently approximate them.
 
-- strings;
-- arrays and records;
-- explicit application-defined traps, pending a diagnostic-preserving trap ABI;
-- host effects/capabilities (`console.write`, filesystem and network reads);
-- output-line and host-read budget consumption until those corresponding effects are implemented.
+## Memory and host ABI
 
-Unsupported semantics fail at compile time with `CompilationError`; they are never silently approximated.
+When strings or structured values are present, the module exports WebAssembly `memory` and an immutable `apl_static_end` global.
+
+Compile-time strings are encoded once as deterministic UTF-8 data segments. Dynamic host-read strings are allocated after `apl_static_end` by the reference host runtime.
+
+Arrays and records are immutable heap objects allocated through `apl.alloc(i32) -> i32`. Every element/field occupies one 8-byte slot. Record fields use lexicographic field-name order, matching normalized LIR construction. Nested arrays/records store heap pointers in those slots.
+
+The host ABI is emitted only for imports actually needed by the module. Depending on the verified LIR it may include:
+
+- `apl.require_capabilities(i32)`;
+- `apl.console_write_i64(i64)`, `apl.console_write_bool(i32)`, `apl.console_write_string(i64)`;
+- `apl.fs_read_text(i64) -> i64`, `apl.net_get_text(i64) -> i64`;
+- `apl.string_eq(i64,i64) -> i32`;
+- `apl.struct_eq(i64 descriptor, i32 left, i32 right) -> i32`;
+- `apl.alloc(i32) -> i32`;
+- `apl.application_trap(i64 code, i64 message, i64 where)`.
+
+Drafts before APL 0.0.8 preserve their historical behavior: inferred effects may exist, but runtime capability grants are not required until the language version introduced them.
 
 ## Checked integer semantics
 
@@ -121,6 +139,6 @@ The command verifies source APL, lowers it to verified LIR, compiles the support
 
 ## Differential testing
 
-CI loads emitted binaries with the native Node/WebAssembly runtime and checks successful compiled results for scalar arithmetic, calls, structured `if`, bounded `repeat`, step budgets, contracts, ranges, quantities and invariants. It also validates deterministic trap codes for arithmetic, repeat guards, exhausted step budgets, failed contracts/invariants and range violations.
+CI loads emitted binaries with the native Node/WebAssembly runtime and checks compiled results for arithmetic, calls, structured control, strings, arrays, records, host effects, all three resource budgets, contracts, ranges, quantities and invariants. It also validates deterministic built-in trap codes, exact application-trap diagnostics, capability denial and fixture-backed host I/O.
 
-This is a substantial WASM backend checkpoint, not the completion of M4. Remaining backend work centers on structured data/string representation, observable host effects, output/host-read budgets, application-defined trap diagnostics, and broader optimization/equivalence testing.
+The core semantic WASM backend surface is now implemented. Remaining M4 work centers on systematic interpreter-vs-compiled differential testing and optimization-equivalence validation.
