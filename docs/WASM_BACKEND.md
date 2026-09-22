@@ -61,6 +61,9 @@ Current deterministic trap codes are:
 |---:|---|
 | 1 | `apl.i64_overflow` |
 | 2 | `apl.division_by_zero` |
+| 3 | `apl.repeat_negative_count` |
+| 4 | `apl.repeat_count_exceeds_max` |
+| 5 | `apl.resource_limit` for exhausted `steps` |
 
 The compiler emits an `unreachable` immediately after the import call so a nonconforming host that returns still cannot continue execution.
 
@@ -76,18 +79,18 @@ The scalar checkpoint supports:
 - Boolean not/and/or;
 - pure function calls;
 - verified multi-block CFG with `br`/`cond_br` and typed block-parameter transfers;
-- scalar/unit returns;
-- legacy `budget.step` nodes when source APL has no runtime resource budget.
+- bounded `repeat` loops and their runtime count guards;
+- module-wide `steps` resource budgets shared across function calls;
+- scalar/unit returns.
 
 Compilation currently rejects:
 
 - strings;
 - arrays, records, ranges and quantities;
-- bounded `repeat` until its runtime guard is mapped to the trap ABI;
 - contracts/invariant guards;
 - explicit traps;
 - host effects/capabilities;
-- source APL resource budgets.
+- output-line and host-read budget consumption until those corresponding effects are implemented.
 
 Unsupported semantics fail at compile time with `CompilationError`; they are never silently approximated.
 
