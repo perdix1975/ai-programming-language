@@ -1181,6 +1181,7 @@ def _verify_lir_function(
             available,
             block_params,
             target_map,
+            source_apl,
             fn["returns"],
             f"{name}.{block['id']}.term",
         )
@@ -1232,9 +1233,22 @@ def _verify_lir_op(
             all(isinstance(op[key], str) and bool(op[key]) for key in ("code", "message", "where")),
             f"{where}: guard code/message/where must be non-empty strings",
         )
+        _expect(
+            op["code"] in {
+                "apl.precondition_failed",
+                "apl.postcondition_failed",
+                "apl.invariant_failed",
+            },
+            f"{where}: unsupported normalized guard code '{op['code']}'",
+        )
+        if op["code"] == "apl.invariant_failed":
+            _require_source_version(source_apl, (0, 0, 14), where, "invariant guard")
+        else:
+            _require_source_version(source_apl, (0, 0, 11), where, "contract guard")
         return None
 
     if name == "repeat.guard":
+        _require_source_version(source_apl, (0, 0, 4), where, "repeat.guard")
         _expect(
             set(op) == {"op", "count", "max", "where"},
             f"{where}: repeat.guard has unexpected or missing fields",
@@ -1272,6 +1286,8 @@ def _verify_lir_op(
     binary_i64 = {"i64.add", "i64.sub", "i64.mul", "i64.div", "i64.rem"}
     binary_cmp = {"i64.lt", "i64.le", "i64.gt", "i64.ge"}
     if name in binary_i64 | binary_cmp:
+        if name in {"i64.div", "i64.rem"} or name in binary_cmp:
+            _require_source_version(source_apl, (0, 0, 3), where, name)
         expected_fields = {"op", "id", "type", "args"}
         if "where" in op:
             expected_fields.add("where")
@@ -1284,6 +1300,8 @@ def _verify_lir_op(
         return _verify_result_id(op, where), result_type
 
     if name in {"value.eq", "value.lt", "value.le", "value.gt", "value.ge"}:
+        if name != "value.eq":
+            _require_source_version(source_apl, (0, 0, 11), where, name)
         expected_fields = {"op", "id", "type", "args"}
         if "where" in op:
             expected_fields.add("where")
@@ -1302,6 +1320,7 @@ def _verify_lir_op(
         return _verify_result_id(op, where), "bool"
 
     if name == "bool.not":
+        _require_source_version(source_apl, (0, 0, 11), where, "bool.not")
         _expect(set(op) == {"op", "id", "type", "args"}, f"{where}: bool.not fields invalid")
         args = op["args"]
         _expect(isinstance(args, list) and len(args) == 1, f"{where}: bool.not requires one arg")
@@ -1310,6 +1329,7 @@ def _verify_lir_op(
         return _verify_result_id(op, where), "bool"
 
     if name in {"bool.and", "bool.or"}:
+        _require_source_version(source_apl, (0, 0, 11), where, name)
         _expect(set(op) == {"op", "id", "type", "args"}, f"{where}: {name} fields invalid")
         args = op["args"]
         _expect(isinstance(args, list) and len(args) == 2, f"{where}: {name} requires two args")
@@ -1318,6 +1338,7 @@ def _verify_lir_op(
         return _verify_result_id(op, where), "bool"
 
     if name == "call":
+        _require_source_version(source_apl, (0, 0, 2), where, "call")
         target = op.get("function")
         _expect(isinstance(target, str) and target in signatures, f"{where}: unknown call target '{target}'")
         param_types, returns = signatures[target]
@@ -1339,6 +1360,7 @@ def _verify_lir_op(
         return _verify_result_id(op, where), returns
 
     if name == "array.make":
+        _require_source_version(source_apl, (0, 0, 5), where, "array.make")
         _expect(set(op) == {"op", "id", "type", "args"}, f"{where}: array.make fields invalid")
         typ = op["type"]
         _validate_type(typ, source_apl, f"{where}.type")
@@ -1349,6 +1371,7 @@ def _verify_lir_op(
         return _verify_result_id(op, where), typ
 
     if name == "array.get":
+        _require_source_version(source_apl, (0, 0, 5), where, "array.get")
         _expect(set(op) == {"op", "id", "type", "args", "where"}, f"{where}: array.get fields invalid")
         args = op["args"]
         _expect(isinstance(args, list) and len(args) == 2, f"{where}: array.get requires two args")
@@ -1359,6 +1382,7 @@ def _verify_lir_op(
         return _verify_result_id(op, where), op["type"]
 
     if name == "array.len":
+        _require_source_version(source_apl, (0, 0, 5), where, "array.len")
         _expect(set(op) == {"op", "id", "type", "arg"}, f"{where}: array.len fields invalid")
         array_type = _lookup(available, op["arg"], where)
         _expect(isinstance(array_type, dict) and set(array_type) == {"array", "len"}, f"{where}: array.len source must be array")
@@ -1366,6 +1390,7 @@ def _verify_lir_op(
         return _verify_result_id(op, where), "i64"
 
     if name == "record.make":
+        _require_source_version(source_apl, (0, 0, 6), where, "record.make")
         _expect(set(op) == {"op", "id", "type", "fields"}, f"{where}: record.make fields invalid")
         typ = op["type"]
         _validate_type(typ, source_apl, f"{where}.type")
@@ -1378,6 +1403,7 @@ def _verify_lir_op(
         return _verify_result_id(op, where), typ
 
     if name == "record.get":
+        _require_source_version(source_apl, (0, 0, 6), where, "record.get")
         _expect(set(op) == {"op", "id", "type", "record", "field"}, f"{where}: record.get fields invalid")
         record_type = _lookup(available, op["record"], where)
         _expect(isinstance(record_type, dict) and set(record_type) == {"record"}, f"{where}: record.get source must be record")
@@ -1387,6 +1413,7 @@ def _verify_lir_op(
         return _verify_result_id(op, where), op["type"]
 
     if name == "range.check":
+        _require_source_version(source_apl, (0, 0, 12), where, "range.check")
         _expect(set(op) == {"op", "id", "type", "arg", "where"}, f"{where}: range.check fields invalid")
         _expect(_lookup(available, op["arg"], where) == "i64", f"{where}: range.check source must be i64")
         _validate_type(op["type"], source_apl, f"{where}.type")
@@ -1394,12 +1421,14 @@ def _verify_lir_op(
         return _verify_result_id(op, where), op["type"]
 
     if name == "range.value":
+        _require_source_version(source_apl, (0, 0, 12), where, "range.value")
         _expect(set(op) == {"op", "id", "type", "arg"}, f"{where}: range.value fields invalid")
         _expect(is_range_type(_lookup(available, op["arg"], where)), f"{where}: range.value source must be range")
         _expect(op["type"] == "i64", f"{where}: range.value result must be i64")
         return _verify_result_id(op, where), "i64"
 
     if name == "quantity.attach":
+        _require_source_version(source_apl, (0, 0, 13), where, "quantity.attach")
         _expect(set(op) == {"op", "id", "type", "arg"}, f"{where}: quantity.attach fields invalid")
         _expect(_lookup(available, op["arg"], where) == "i64", f"{where}: quantity.attach source must be i64")
         _validate_type(op["type"], source_apl, f"{where}.type")
@@ -1407,12 +1436,14 @@ def _verify_lir_op(
         return _verify_result_id(op, where), op["type"]
 
     if name == "quantity.value":
+        _require_source_version(source_apl, (0, 0, 13), where, "quantity.value")
         _expect(set(op) == {"op", "id", "type", "arg"}, f"{where}: quantity.value fields invalid")
         _expect(is_quantity_type(_lookup(available, op["arg"], where)), f"{where}: quantity.value source must be quantity")
         _expect(op["type"] == "i64", f"{where}: quantity.value result must be i64")
         return _verify_result_id(op, where), "i64"
 
     if name in {"quantity.add", "quantity.sub", "quantity.mul", "quantity.div"}:
+        _require_source_version(source_apl, (0, 0, 13), where, name)
         _expect(set(op) == {"op", "id", "type", "args", "where"}, f"{where}: {name} fields invalid")
         args = op["args"]
         _expect(isinstance(args, list) and len(args) == 2, f"{where}: {name} requires two args")
@@ -1431,6 +1462,7 @@ def _verify_lir_op(
         return _verify_result_id(op, where), inferred
 
     if name in {"host.fs.read_text", "host.net.get_text"}:
+        _require_source_version(source_apl, (0, 0, 9), where, name)
         _expect(set(op) == {"op", "id", "type", "arg", "where"}, f"{where}: {name} fields invalid")
         _expect(_lookup(available, op["arg"], where) == "string", f"{where}: {name} arg must be string")
         _expect(op["type"] == "string", f"{where}: {name} result must be string")
@@ -1464,6 +1496,7 @@ def _verify_lir_term(
     available: dict[str, Any],
     block_params: dict[str, list[tuple[str, Any]]],
     target_map: dict[str, Any],
+    source_apl: str,
     return_type: Any,
     where: str,
 ) -> None:
@@ -1481,6 +1514,7 @@ def _verify_lir_term(
         return
 
     if op == "cond_br":
+        _require_source_version(source_apl, (0, 0, 2), where, "cond_br")
         _expect(set(term) == {"op", "cond", "then", "else"}, f"{where}: cond_br fields invalid")
         _expect(_lookup(available, term["cond"], where) == "bool", f"{where}: cond_br condition must be bool")
         _verify_edge(term["then"], available, block_params, f"{where}.then")
@@ -1496,6 +1530,7 @@ def _verify_lir_term(
         return
 
     if op == "trap":
+        _require_source_version(source_apl, (0, 0, 7), where, "trap")
         _expect(
             set(term) == {"op", "code", "message", "where"}
             and all(isinstance(term[key], str) and bool(term[key]) for key in ("code", "message", "where")),
