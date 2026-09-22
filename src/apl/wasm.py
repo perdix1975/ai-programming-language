@@ -23,6 +23,7 @@ TRAP_PRECONDITION_FAILED = 6
 TRAP_POSTCONDITION_FAILED = 7
 TRAP_INVARIANT_FAILED = 8
 TRAP_RANGE_VIOLATION = 9
+TRAP_ARRAY_INDEX_OOB = 10
 
 
 def _u32(value: int) -> bytes:
@@ -67,15 +68,42 @@ def _section(section_id: int, payload: bytes) -> bytes:
     return bytes([section_id]) + _u32(len(payload)) + payload
 
 
+def _is_array_type(typ: Any) -> bool:
+    return isinstance(typ, dict) and set(typ) == {"array", "len"}
+
+
+def _is_record_type(typ: Any) -> bool:
+    return isinstance(typ, dict) and set(typ) == {"record"}
+
+
+def _is_aggregate_type(typ: Any) -> bool:
+    return _is_array_type(typ) or _is_record_type(typ)
+
+
 def _value_type(typ: Any) -> int:
     if typ == "i64" or is_range_type(typ) or is_quantity_type(typ):
         return WASM_I64
-    if typ == "bool":
+    if typ == "bool" or _is_aggregate_type(typ):
         return WASM_I32
     raise CompilationError(
-        "WASM scalar backend supports i64/bool/range/quantity values, "
+        "WASM backend supports i64/bool/range/quantity/array/record values, "
         f"got {typ!r}"
     )
+
+
+def _storage_size(typ: Any) -> int:
+    return 8 if _value_type(typ) == WASM_I64 else 4
+
+
+def _record_layout(typ: Any) -> dict[str, tuple[int, Any]]:
+    if not _is_record_type(typ):
+        raise CompilationError(f"expected record type, got {typ!r}")
+    offset = 0
+    layout: dict[str, tuple[int, Any]] = {}
+    for name, field_type in sorted(typ["record"].items()):
+        layout[name] = (offset, field_type)
+        offset += _storage_size(field_type)
+    return layout
 
 
 def _function_type(params: list[Any], result: Any) -> bytes:
@@ -100,6 +128,10 @@ def _local_get(index: int) -> bytes:
 
 def _local_set(index: int) -> bytes:
     return _op(0x21, _u32(index))
+
+
+def _memarg(align: int, offset: int) -> bytes:
+    return _u32(align) + _u32(offset)
 
 
 def _call(index: int) -> bytes:
@@ -139,11 +171,13 @@ class _FunctionCompiler:
         function_indices: dict[str, int],
         signatures: dict[str, tuple[list[Any], Any]],
         step_global_index: int | None,
+        heap_global_index: int | None,
     ) -> None:
         self.fn = fn
         self.function_indices = function_indices
         self.signatures = signatures
         self.step_global_index = step_global_index
+        self.heap_global_index = heap_global_index
         self.types: dict[str, Any] = {
             param["id"]: param["type"] for param in fn["params"]
         }
