@@ -6,6 +6,7 @@ from typing import Any, Callable
 from .contracts import evaluate_contracts
 from .errors import ExecutionError
 from .host import DeterministicHost
+from .ranges import range_bounds, range_contains
 from .resources import ExecutionBudget, ResourceLimits
 from .verify import verify_program
 
@@ -239,6 +240,22 @@ def _execute_sequence(
             record_value = env[ins["record"]]
             env[ins["id"]] = record_value.get(ins["field"])
             types[ins["id"]] = types[ins["record"]]["record"][ins["field"]]
+        elif op == "range.check":
+            value = env[ins["args"][0]]
+            range_type = ins["type"]
+            if not range_contains(range_type, value):
+                minimum, maximum = range_bounds(range_type)
+                raise ExecutionError(
+                    "apl.range_violation",
+                    f"value {value} is outside range [{minimum}, {maximum}]",
+                    where=where,
+                )
+            env[ins["id"]] = value
+            types[ins["id"]] = range_type
+        elif op == "range.value":
+            source = ins["args"][0]
+            env[ins["id"]] = env[source]
+            types[ins["id"]] = "i64"
         elif op in {"fs.read_text", "net.get_text"}:
             required_capability = op
             if enforce_capabilities and required_capability not in capabilities:
