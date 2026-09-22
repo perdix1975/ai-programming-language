@@ -25,7 +25,8 @@ The executable reference core includes:
 - explicit runtime capability grants, with `console.write` as the first protected host effect;
 - deterministic fixture-backed `fs.read_text` and `net.get_text` host operations;
 - deterministic `steps`, `output_lines`, and `host_reads` execution budgets with optional stricter host limits;
-- typed declarative function `requires`/`ensures` contracts with deterministic pre/postcondition traps;\n- structural bounded `i64` range types with explicit `range.check` refinement and `range.value` widening;
+- typed declarative function `requires`/`ensures` contracts with deterministic pre/postcondition traps;
+- structural bounded `i64` range types with explicit `range.check` refinement and `range.value` widening;
 - static rejection of direct and mutual recursion in Draft 0.0.2;
 - strict verifier;
 - deterministic canonical encoding and SHA-256 identity;
