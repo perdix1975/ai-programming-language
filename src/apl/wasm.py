@@ -196,6 +196,62 @@ class _FunctionCompiler:
     def _arg(self, value_id: str) -> bytes:
         return _local_get(self._index(value_id))
 
+    def _allocate(self, size: int, dest_index: int) -> bytes:
+        if self.heap_global_index is None:
+            raise CompilationError("aggregate allocation requested without WASM memory")
+        heap = self.heap_global_index
+
+        code = bytearray()
+        code.extend(_op(0x23, _u32(heap), 0xA7))
+        code.extend(_local_set(dest_index))
+        code.extend(_op(0x23, _u32(heap)))
+        code.extend(_op(0x42, _sleb(size, 64), 0x7C))
+        code.extend(_op(0x24, _u32(heap)))
+
+        too_large = (
+            _op(0x23, _u32(heap))
+            + _op(0x42, _sleb(0xFFFFFFFF, 64), 0x56)
+        )
+        code.extend(_guard_if(too_large, _op(0x00)))
+
+        required_pages = (
+            _op(0x23, _u32(heap))
+            + _op(0x42, _sleb(65535, 64), 0x7C)
+            + _op(0x42, _sleb(16, 64), 0x88)
+        )
+        current_pages = _op(0x3F, 0x00, 0xAD)
+        need_grow = required_pages + current_pages + _op(0x56)
+        grow_failed = (
+            required_pages
+            + current_pages
+            + _op(0x7D, 0xA7, 0x40, 0x00)
+            + _op(0x41, _sleb(-1, 32), 0x46)
+        )
+        code.extend(_guard_if(need_grow, _guard_if(grow_failed, _op(0x00))))
+        return bytes(code)
+
+    def _store_at(
+        self,
+        base_id: str,
+        source_id: str,
+        typ: Any,
+        offset: int,
+    ) -> bytes:
+        wasm_type = _value_type(typ)
+        opcode = 0x37 if wasm_type == WASM_I64 else 0x36
+        align = 3 if wasm_type == WASM_I64 else 2
+        return (
+            self._arg(base_id)
+            + self._arg(source_id)
+            + _op(opcode, _memarg(align, offset))
+        )
+
+    def _load_static(self, base_id: str, typ: Any, offset: int) -> bytes:
+        wasm_type = _value_type(typ)
+        opcode = 0x29 if wasm_type == WASM_I64 else 0x28
+        align = 3 if wasm_type == WASM_I64 else 2
+        return self._arg(base_id) + _op(opcode, _memarg(align, offset))
+
     def _binary_i64(
         self,
         op: dict[str, Any],
