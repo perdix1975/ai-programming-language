@@ -45,7 +45,7 @@
 - [ ] WASM backend
   - [x] real WebAssembly 1.0 binary emitter for pure scalar single-block LIR
   - [x] checked add/sub/div/rem trap ABI and native Node execution test
-  - [ ] checked multiplication
+  - [x] checked multiplication
   - [ ] multi-block CFG / structured control
   - [ ] resource budgets and remaining semantic types/effects
 - [ ] optimization equivalence tests
