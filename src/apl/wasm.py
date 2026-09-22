@@ -426,6 +426,10 @@ class _FunctionCompiler:
         dest = self._index(op["id"])
         typ = self.types[a]
         name = op["op"]
+        if _is_aggregate_type(typ):
+            raise CompilationError(
+                "WASM aggregate structural equality is not implemented yet"
+            )
         wasm_type = _value_type(typ)
         if name == "value.eq":
             opcode = 0x51 if wasm_type == WASM_I64 else 0x46 if wasm_type == WASM_I32 else None
@@ -474,6 +478,93 @@ class _FunctionCompiler:
                 )
             failed = self._arg(op["cond"]) + _op(0x45)
             return _guard_if(failed, _trap(trap_code))
+
+        if name == "array.make":
+            array_type = op["type"]
+            element_type = array_type["array"]
+            slot_size = _storage_size(element_type)
+            dest = self._index(op["id"])
+            code = bytearray(
+                self._allocate(slot_size * array_type["len"], dest)
+            )
+            for index, source in enumerate(op["args"]):
+                code.extend(
+                    self._store_at(
+                        op["id"],
+                        source,
+                        element_type,
+                        index * slot_size,
+                    )
+                )
+            return bytes(code)
+
+        if name == "array.get":
+            array_id, index_id = op["args"]
+            array_type = self.types[array_id]
+            element_type = array_type["array"]
+            length = array_type["len"]
+            negative = self._arg(index_id) + _op(
+                0x42, _sleb(0, 64), 0x53
+            )
+            high = self._arg(index_id) + _op(
+                0x42, _sleb(length, 64), 0x59
+            )
+            address = (
+                self._arg(array_id)
+                + self._arg(index_id)
+                + _op(0xA7)
+                + _op(
+                    0x41,
+                    _sleb(_storage_size(element_type), 32),
+                    0x6C,
+                    0x6A,
+                )
+            )
+            wasm_type = _value_type(element_type)
+            load = (
+                _op(0x29, _memarg(3, 0))
+                if wasm_type == WASM_I64
+                else _op(0x28, _memarg(2, 0))
+            )
+            return (
+                _guard_if(negative, _trap(TRAP_ARRAY_INDEX_OOB))
+                + _guard_if(high, _trap(TRAP_ARRAY_INDEX_OOB))
+                + address
+                + load
+                + _local_set(self._index(op["id"]))
+            )
+
+        if name == "array.len":
+            array_type = self.types[op["arg"]]
+            return (
+                _op(0x42, _sleb(array_type["len"], 64))
+                + _local_set(self._index(op["id"]))
+            )
+
+        if name == "record.make":
+            record_type = op["type"]
+            layout = _record_layout(record_type)
+            total_size = sum(
+                _storage_size(field_type)
+                for _, field_type in layout.values()
+            )
+            dest = self._index(op["id"])
+            code = bytearray(self._allocate(total_size, dest))
+            for field, source in sorted(op["fields"].items()):
+                offset, field_type = layout[field]
+                code.extend(
+                    self._store_at(op["id"], source, field_type, offset)
+                )
+            return bytes(code)
+
+        if name == "record.get":
+            record_id = op["record"]
+            layout = _record_layout(self.types[record_id])
+            offset, field_type = layout[op["field"]]
+            return (
+                self._load_static(record_id, field_type, offset)
+                + _local_set(self._index(op["id"]))
+            )
 
         if name == "range.check":
             source = op["arg"]
