@@ -10,6 +10,7 @@ from .errors import AplError
 from .host import DeterministicHost
 from .interpreter import run_program
 from .lir import lower_hash, lower_program, verify_lir
+from .optimize import optimize_lir, optimize_program
 from .resources import ResourceLimits
 from .verify import verify_program
 from .wasm import compile_program_to_wasm
@@ -85,6 +86,18 @@ def main() -> int:
     p_verify_lir = sub.add_parser("verify-lir", help="verify normalized compiler LIR")
     p_verify_lir.add_argument("file")
 
+    p_optimize = sub.add_parser(
+        "optimize",
+        help="lower verified APL and emit deterministic optimized LIR",
+    )
+    p_optimize.add_argument("file")
+
+    p_optimize_lir = sub.add_parser(
+        "optimize-lir",
+        help="optimize an already normalized LIR artifact",
+    )
+    p_optimize_lir.add_argument("file")
+
     p_compile_wasm = sub.add_parser(
         "compile-wasm",
         help="compile supported verified APL to a WebAssembly 1.0 binary",
@@ -121,6 +134,10 @@ def main() -> int:
         elif args.command == "verify-lir":
             verify_lir(program)
             print("valid")
+        elif args.command == "optimize":
+            print(canonical_text(optimize_program(program)))
+        elif args.command == "optimize-lir":
+            print(canonical_text(optimize_lir(program)))
         elif args.command == "compile-wasm":
             artifact = compile_program_to_wasm(program)
             Path(args.output).write_bytes(artifact.binary)
