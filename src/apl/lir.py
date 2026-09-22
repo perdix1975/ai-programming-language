@@ -468,7 +468,6 @@ class _FunctionLowerer:
                 outer_env,
                 ins["index"],
                 header,
-                header_env,
             ),
         )
 
@@ -671,7 +670,6 @@ class _FunctionLowerer:
             dict[str, tuple[str, Any]],
             str,
             _Block,
-            dict[str, tuple[str, Any]],
         ] | None = None,
     ) -> None:
         for index, ins in enumerate(instructions):
@@ -694,7 +692,7 @@ class _FunctionLowerer:
                     return
 
                 if repeat_backedge is not None:
-                    outer_env, index_name, header, _ = repeat_backedge
+                    outer_env, index_name, header = repeat_backedge
                     yielded = env[ins["value"]]
                     one = self._emit_value("const", "i64", value=1)
                     next_index = self._emit_value(
