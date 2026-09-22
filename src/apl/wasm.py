@@ -395,6 +395,82 @@ class _FunctionCompiler:
             f"WASM scalar backend does not support LIR op '{name}'"
         )
 
+    def _edge_transfer(
+        self,
+        edge: dict[str, Any],
+        *,
+        blocks_by_id: dict[str, dict[str, Any]],
+        pc_index: int,
+    ) -> bytes:
+        target = blocks_by_id[edge["target"]]
+        args = edge["args"]
+        params = target["params"]
+        if len(args) != len(params):
+            raise CompilationError(
+                f"{self.fn['name']}: malformed CFG edge to {target['id']}"
+            )
+
+        # Branch arguments are parallel assignments. Push every source first,
+        # then pop into destination block parameters in reverse order.
+        code = bytearray()
+        for source in args:
+            code.extend(self._arg(source))
+        for param in reversed(params):
+            code.extend(_local_set(self._index(param["id"])))
+        code.extend(_op(0x41, _sleb(int(target["id"][1:]), 32)))
+        code.extend(_local_set(pc_index))
+        return bytes(code)
+
+    def _compile_term(
+        self,
+        term: dict[str, Any],
+        *,
+        blocks_by_id: dict[str, dict[str, Any]],
+        pc_index: int,
+    ) -> bytes:
+        op = term["op"]
+
+        if op == "br":
+            return (
+                self._edge_transfer(
+                    term,
+                    blocks_by_id=blocks_by_id,
+                    pc_index=pc_index,
+                )
+                + _op(0x0C, _u32(1))
+            )
+
+        if op == "cond_br":
+            condition = self._arg(term["cond"])
+            then_code = self._edge_transfer(
+                term["then"],
+                blocks_by_id=blocks_by_id,
+                pc_index=pc_index,
+            )
+            else_code = self._edge_transfer(
+                term["else"],
+                blocks_by_id=blocks_by_id,
+                pc_index=pc_index,
+            )
+            # After the inner if closes we remain inside the dispatch block
+            # check, so br depth 1 targets the surrounding dispatch loop.
+            return _if_else(condition, then_code, else_code) + _op(0x0C, _u32(1))
+
+        if op == "return":
+            code = b""
+            if "value" in term:
+                code += self._arg(term["value"])
+            return code + _op(0x0F)
+
+        if op == "trap":
+            raise CompilationError(
+                f"{self.fn['name']}: explicit LIR traps are not supported by the WASM ABI yet"
+            )
+
+        raise CompilationError(
+            f"{self.fn['name']}: unsupported WASM CFG terminator '{op}'"
+        )
+
     def compile(self) -> bytes:
         blocks = self.fn["blocks"]
         if not blocks or blocks[0]["id"] != "b0" or blocks[0]["params"]:
@@ -410,30 +486,6 @@ class _FunctionCompiler:
             _value_type(param["type"])
         if self.fn["returns"] != "unit":
             _value_type(self.fn["returns"])
-
-        # Current normalized LIR routes every semantic return through a final
-        # exit block. Support either a direct single-block return or exactly
-        # that canonical b0 -> exit -> return trampoline. General CFG remains
-        # deliberately unsupported in this checkpoint.
-        if len(blocks) == 1:
-            entry = blocks[0]
-            exit_block = None
-        elif len(blocks) == 2:
-            entry, exit_block = blocks
-            edge = entry["term"]
-            if (
-                edge.get("op") != "br"
-                or edge.get("target") != exit_block["id"]
-                or exit_block["ops"]
-                or exit_block["term"].get("op") != "return"
-            ):
-                raise CompilationError(
-                    f"{self.fn['name']}: WASM scalar backend does not support general CFG yet"
-                )
-        else:
-            raise CompilationError(
-                f"{self.fn['name']}: WASM scalar backend does not support general CFG yet"
-            )
 
         local_types: list[tuple[int, int]] = []
         for block in blocks:
@@ -456,36 +508,44 @@ class _FunctionCompiler:
                 f"{self.fn['name']}: scalar WASM locals are not dense after parameters"
             )
 
+        pc_index = param_count + len(local_types)
         local_decls = [
-            _u32(1) + bytes([typ])
-            for _, typ in local_types
+            *[_u32(1) + bytes([typ]) for _, typ in local_types],
+            _u32(1) + bytes([WASM_I32]),
         ]
         code = bytearray(_vec(local_decls))
-        for op in entry["ops"]:
-            code.extend(self.compile_op(op))
 
-        if exit_block is None:
-            term = entry["term"]
-        else:
-            edge = entry["term"]
-            target_params = exit_block["params"]
-            args = edge["args"]
-            if len(args) != len(target_params):
-                raise CompilationError(
-                    f"{self.fn['name']}: malformed canonical exit branch"
-                )
-            for source, target in zip(args, target_params):
-                code.extend(self._arg(source))
-                code.extend(_local_set(self._index(target["id"])))
-            term = exit_block["term"]
+        # Program-counter CFG dispatcher. This deliberately follows verified
+        # LIR block order rather than reconstructing high-level source syntax.
+        code.extend(_op(0x41, _sleb(0, 32)))
+        code.extend(_local_set(pc_index))
+        code.extend(_op(0x03, 0x40))  # loop $dispatch
 
-        if term["op"] != "return":
-            raise CompilationError(
-                f"{self.fn['name']}: WASM scalar backend requires return terminator"
+        blocks_by_id = {block["id"]: block for block in blocks}
+        for block in blocks:
+            block_number = int(block["id"][1:])
+            condition = (
+                _local_get(pc_index)
+                + _op(0x41, _sleb(block_number, 32), 0x46)
             )
-        if "value" in term:
-            code.extend(self._arg(term["value"]))
-        code.append(0x0B)
+            block_code = bytearray()
+            for op in block["ops"]:
+                block_code.extend(self.compile_op(op))
+            block_code.extend(
+                self._compile_term(
+                    block["term"],
+                    blocks_by_id=blocks_by_id,
+                    pc_index=pc_index,
+                )
+            )
+            code.extend(_if_else(condition, bytes(block_code)))
+
+        # Verified LIR has no path with an unknown block id. Keep a hard WASM
+        # trap for corrupted backend state instead of falling through.
+        code.extend(_op(0x00))
+        code.extend(_op(0x0B))  # end loop
+        code.extend(_op(0x00))  # loop may not fall through to function end
+        code.extend(_op(0x0B))
         body = bytes(code)
         return _u32(len(body)) + body
 
