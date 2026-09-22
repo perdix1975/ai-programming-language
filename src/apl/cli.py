@@ -9,6 +9,7 @@ from .canonical import canonical_text, semantic_hash
 from .errors import AplError
 from .host import DeterministicHost
 from .interpreter import run_program
+from .lir import lower_hash, lower_program, verify_lir
 from .resources import ResourceLimits
 from .verify import verify_program
 
@@ -71,6 +72,18 @@ def main() -> int:
     p_hash = sub.add_parser("hash", help="emit canonical SHA-256 identity")
     p_hash.add_argument("file")
 
+    p_lower = sub.add_parser("lower", help="emit normalized compiler LIR")
+    p_lower.add_argument("file")
+
+    p_lower_hash = sub.add_parser(
+        "lower-hash",
+        help="emit canonical SHA-256 identity of normalized compiler LIR",
+    )
+    p_lower_hash.add_argument("file")
+
+    p_verify_lir = sub.add_parser("verify-lir", help="verify normalized compiler LIR")
+    p_verify_lir.add_argument("file")
+
     args = parser.parse_args()
 
     try:
@@ -93,6 +106,13 @@ def main() -> int:
         elif args.command == "hash":
             verify_program(program)
             print(semantic_hash(program))
+        elif args.command == "lower":
+            print(canonical_text(lower_program(program)))
+        elif args.command == "lower-hash":
+            print(lower_hash(program))
+        elif args.command == "verify-lir":
+            verify_lir(program)
+            print("valid")
         return 0
     except (AplError, ValueError, OSError, json.JSONDecodeError) as exc:
         print(f"APL error: {exc}")
