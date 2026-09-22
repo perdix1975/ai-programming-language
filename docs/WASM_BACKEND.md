@@ -69,7 +69,7 @@ The compiler emits an `unreachable` immediately after the import call so a nonco
 The scalar checkpoint supports:
 
 - scalar `i64` and `bool` constants;
-- checked `i64.add` and `i64.sub`;
+- checked `i64.add`, `i64.sub`, and `i64.mul`;
 - checked `i64.div` and `i64.rem`;
 - signed `i64` ordered comparisons;
 - scalar equality;
@@ -80,7 +80,6 @@ The scalar checkpoint supports:
 
 Compilation currently rejects:
 
-- checked multiplication until exact overflow lowering is implemented;
 - strings;
 - arrays, records, ranges and quantities;
 - multi-block CFG (`if`/`repeat`);
@@ -93,7 +92,7 @@ Unsupported semantics fail at compile time with `CompilationError`; they are nev
 
 ## Checked integer semantics
 
-WebAssembly wraps `i64.add/sub`, while APL requires overflow traps. The backend therefore emits explicit overflow predicates after the wrapped operation and invokes `apl.trap(1)` when overflow occurred.
+WebAssembly wraps `i64.add/sub/mul`, while APL requires overflow traps. The backend emits explicit overflow checks: add/sub use signed overflow predicates after the wrapped operation, while multiplication verifies signed bounds before executing the multiply. Overflow invokes `apl.trap(1)`.
 
 Division emits explicit checks for:
 
