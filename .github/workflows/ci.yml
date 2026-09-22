@@ -80,6 +80,8 @@ jobs:
           apl compile-wasm examples/ranges.apl /tmp/ranges.wasm
           apl compile-wasm examples/quantities.apl /tmp/quantities.wasm
           apl compile-wasm examples/invariants.apl /tmp/invariants.wasm
+          apl compile-wasm examples/wasm_array.apl /tmp/wasm_array.wasm
+          apl compile-wasm examples/wasm_record.apl /tmp/wasm_record.wasm
           node - <<'NODE'
           const fs = require("fs");
           const bytes = fs.readFileSync("/tmp/wasm_scalar.wasm");
@@ -106,8 +108,10 @@ jobs:
             run("/tmp/contracts.wasm"),
             run("/tmp/ranges.wasm"),
             run("/tmp/quantities.wasm"),
-            run("/tmp/invariants.wasm")
-          ]).then(([addValue, mulValue, ifValue, repeatValue, stepsValue, contractValue, rangeValue, quantityValue, invariantValue]) => {
+            run("/tmp/invariants.wasm"),
+            run("/tmp/wasm_array.wasm"),
+            run("/tmp/wasm_record.wasm")
+          ]).then(([addValue, mulValue, ifValue, repeatValue, stepsValue, contractValue, rangeValue, quantityValue, invariantValue, arrayValue, recordValue]) => {
             if (addValue !== 42n) {
               throw new Error(`expected add 42n, got ${addValue}`);
             }
@@ -135,6 +139,12 @@ jobs:
             if (invariantValue !== 5n) {
               throw new Error(`expected invariants 5n, got ${invariantValue}`);
             }
+            if (arrayValue !== 23n) {
+              throw new Error(`expected array result 23n, got ${arrayValue}`);
+            }
+            if (recordValue !== 37n) {
+              throw new Error(`expected record result 37n, got ${recordValue}`);
+            }
           });
           NODE
 
@@ -149,6 +159,7 @@ jobs:
           apl compile-wasm examples/contracts_fail.apl /tmp/contracts_fail.wasm
           apl compile-wasm examples/ranges_fail.apl /tmp/ranges_fail.wasm
           apl compile-wasm examples/invariants_fail.apl /tmp/invariants_fail.wasm
+          apl compile-wasm examples/wasm_array_oob.apl /tmp/wasm_array_oob.wasm
           node - <<'NODE'
           const fs = require("fs");
           async function trapCode(path) {
@@ -182,8 +193,9 @@ jobs:
             trapCode("/tmp/wasm_steps_fail.wasm"),
             trapCode("/tmp/contracts_fail.wasm"),
             trapCode("/tmp/ranges_fail.wasm"),
-            trapCode("/tmp/invariants_fail.wasm")
-          ]).then(([overflow, mulOverflow, divzero, repeatNegative, repeatExceeds, stepsExhausted, preconditionFailed, rangeFailed, invariantFailed]) => {
+            trapCode("/tmp/invariants_fail.wasm"),
+            trapCode("/tmp/wasm_array_oob.wasm")
+          ]).then(([overflow, mulOverflow, divzero, repeatNegative, repeatExceeds, stepsExhausted, preconditionFailed, rangeFailed, invariantFailed, arrayOob]) => {
             if (overflow !== 1) {
               throw new Error(`expected overflow trap 1, got ${overflow}`);
             }
@@ -210,6 +222,9 @@ jobs:
             }
             if (invariantFailed !== 8) {
               throw new Error(`expected invariant trap 8, got ${invariantFailed}`);
+            }
+            if (arrayOob !== 10) {
+              throw new Error(`expected array OOB trap 10, got ${arrayOob}`);
             }
           });
           NODE
