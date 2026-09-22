@@ -1,0 +1,22 @@
+{
+  "apl":"0.0.13",
+  "module":"v013_invariant_gate",
+  "capabilities":[],
+  "limits":{"steps":10,"output_lines":0,"host_reads":0},
+  "invariants":[],
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"i64",
+      "effects":[],
+      "requires":[],
+      "ensures":[],
+      "body":[
+        {"op":"const","id":"answer","type":"i64","value":42},
+        {"op":"return","value":"answer"}
+      ]
+    }
+  ]
+}

@@ -53,6 +53,9 @@ The initial corpus covers:
 - pre-0.0.12 range-type use;
 - invalid range bounds and invalid explicit range conversion operands;
 - pre-0.0.13 quantity-type use;
-- invalid unit symbols/exponents and incompatible quantity arithmetic.
+- invalid unit symbols/exponents and incompatible quantity arithmetic;
+- pre-0.0.14 invariant declarations;
+- malformed/duplicate/non-Boolean invariant definitions;
+- invalid invariant-check argument typing and disallowed invariant-to-invariant definitions.
 
 The corpus should grow whenever a verifier bug, ambiguity, or new language rule is introduced.

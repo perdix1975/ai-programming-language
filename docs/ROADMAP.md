@@ -37,7 +37,7 @@
 - [x] typed declarative preconditions/postconditions with deterministic runtime enforcement
 - [x] structural bounded i64 range types with explicit refinement/widening
 - [x] symbolic unit-vector quantity types with static multiplication/division algebra
-- [ ] machine-checkable invariants
+- [x] reusable typed module invariants with contract references and explicit IR checks
 
 ## M4 — Compiler path
 

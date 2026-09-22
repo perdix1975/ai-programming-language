@@ -2847,3 +2847,370 @@ def test_contract_ordered_comparison_accepts_identical_quantity_types():
     }
     verify_program(p)
     assert run_program(p, output=lambda _: None).value == 8
+
+
+
+def invariant_call(name, *args):
+    return {"invariant": name, "args": list(args)}
+
+
+def positive_invariant():
+    return {
+        "name": "positive",
+        "params": [{"name": "x", "type": "i64"}],
+        "message": "x must be positive",
+        "predicate": predicate(
+            "gt",
+            var("x"),
+            contract_const("i64", 0),
+        ),
+    }
+
+
+def invariant_program(value=3, check=True):
+    body = [
+        {"op": "const", "id": "x", "type": "i64", "value": value},
+    ]
+    if check:
+        body.append(
+            {"op": "invariant.check", "invariant": "positive", "args": ["x"]}
+        )
+    body.append({"op": "return", "value": "x"})
+    return {
+        "apl": "0.0.14",
+        "module": "invariants",
+        "capabilities": [],
+        "limits": {"steps": 100, "output_lines": 0, "host_reads": 0},
+        "invariants": [positive_invariant()],
+        "entry": "main",
+        "functions": [{
+            "name": "main",
+            "params": [],
+            "returns": "i64",
+            "effects": [],
+            "requires": [],
+            "ensures": [],
+            "body": body,
+        }],
+    }
+
+
+def test_v014_invariant_check_passes():
+    p = invariant_program()
+    verify_program(p)
+    result = run_program(p, output=lambda _: None)
+    assert result.value == 3
+
+
+def test_invariant_check_failure_has_stable_trap():
+    p = invariant_program(value=0)
+    try:
+        run_program(p, output=lambda _: None)
+    except ExecutionError as exc:
+        assert exc.code == "apl.invariant_failed"
+        assert exc.where == "main[1]"
+        assert "invariant 'positive' failed" in exc.message
+        assert "x must be positive" in exc.message
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_contracts_can_reuse_named_invariants():
+    p = {
+        "apl": "0.0.14",
+        "module": "invariant_contract",
+        "capabilities": [],
+        "limits": {"steps": 100, "output_lines": 0, "host_reads": 0},
+        "invariants": [positive_invariant()],
+        "entry": "main",
+        "functions": [
+            {
+                "name": "identity_positive",
+                "params": [{"name": "x", "type": "i64"}],
+                "returns": "i64",
+                "effects": [],
+                "requires": [
+                    contract_clause(
+                        "positive_input",
+                        "input must satisfy positive",
+                        invariant_call("positive", var("x")),
+                    )
+                ],
+                "ensures": [
+                    contract_clause(
+                        "positive_result",
+                        "result must satisfy positive",
+                        invariant_call("positive", result_ref()),
+                    )
+                ],
+                "body": [{"op": "return", "value": "x"}],
+            },
+            {
+                "name": "main",
+                "params": [],
+                "returns": "i64",
+                "effects": [],
+                "requires": [],
+                "ensures": [],
+                "body": [
+                    {"op": "const", "id": "x", "type": "i64", "value": 5},
+                    {
+                        "op": "call",
+                        "id": "answer",
+                        "type": "i64",
+                        "function": "identity_positive",
+                        "args": ["x"],
+                    },
+                    {"op": "return", "value": "answer"},
+                ],
+            },
+        ],
+    }
+    verify_program(p)
+    assert run_program(p, output=lambda _: None).value == 5
+
+    p["functions"][1]["body"][0]["value"] = 0
+    try:
+        run_program(p, output=lambda _: None)
+    except ExecutionError as exc:
+        assert exc.code == "apl.precondition_failed"
+        assert "positive_input" in exc.message
+    else:
+        raise AssertionError("expected precondition failure")
+
+
+def test_v014_requires_explicit_invariant_list():
+    p = invariant_program()
+    del p["invariants"]
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "invariants must be a list" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_pre_v014_rejects_invariant_declarations():
+    p = limited_pure_program()
+    p["apl"] = "0.0.13"
+    p["invariants"] = []
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "invariant declarations require APL 0.0.14" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_invariant_names_and_definitions_are_strict():
+    p = invariant_program()
+    p["invariants"][0]["name"] = "Positive"
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "invariant name must match" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+    p = invariant_program()
+    p["invariants"].append(positive_invariant())
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "duplicate invariant 'positive'" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_invariant_parameter_types_and_names_are_checked():
+    p = invariant_program()
+    p["invariants"][0]["params"][0]["type"] = "unit"
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "invariant parameter cannot be unit" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+    p = invariant_program()
+    p["invariants"][0]["params"].append({"name": "x", "type": "i64"})
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "duplicate parameter 'x'" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_invariant_definition_must_be_bool_and_cannot_use_result():
+    p = invariant_program()
+    p["invariants"][0]["predicate"] = var("x")
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "invariant predicate must have type 'bool'" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+    p = invariant_program()
+    p["invariants"][0]["predicate"] = predicate(
+        "eq",
+        result_ref(),
+        contract_const("i64", 1),
+    )
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "function result is not available in this contract" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_invariant_definitions_cannot_invoke_other_invariants():
+    p = invariant_program()
+    p["invariants"].append({
+        "name": "also_positive",
+        "params": [{"name": "x", "type": "i64"}],
+        "message": "must be positive",
+        "predicate": invariant_call("positive", var("x")),
+    })
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "unknown invariant 'positive'" in str(exc)
+    else:
+        raise AssertionError("invariant definitions must not call invariants")
+
+
+def test_contract_invariant_reference_checks_name_arity_and_type():
+    p = invariant_program(check=False)
+    p["functions"][0]["requires"] = [
+        contract_clause(
+            "unknown",
+            "unknown invariant",
+            invariant_call("missing", contract_const("i64", 1)),
+        )
+    ]
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "unknown invariant 'missing'" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+    p = invariant_program(check=False)
+    p["functions"][0]["requires"] = [
+        contract_clause("arity", "wrong arity", invariant_call("positive"))
+    ]
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "invariant 'positive' expects 1 args, got 0" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+    p = invariant_program(check=False)
+    p["functions"][0]["requires"] = [
+        contract_clause(
+            "type",
+            "wrong type",
+            invariant_call("positive", contract_const("bool", True)),
+        )
+    ]
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "invariant arg 0 expects 'i64', got 'bool'" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_invariant_check_checks_name_arity_and_type():
+    p = invariant_program()
+    p["functions"][0]["body"][1]["invariant"] = "missing"
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "unknown invariant 'missing'" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+    p = invariant_program()
+    p["functions"][0]["body"][1]["args"] = []
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "invariant 'positive' expects 1 args, got 0" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+    p = invariant_program()
+    p["functions"][0]["body"][0] = {
+        "op": "const",
+        "id": "x",
+        "type": "bool",
+        "value": True,
+    }
+    try:
+        verify_program(p)
+    except VerificationError as exc:
+        assert "invariant arg 0 expects 'i64', got 'bool'" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_invariant_check_is_available_inside_structured_regions():
+    p = invariant_program(check=False)
+    p["functions"][0]["body"] = [
+        {"op": "const", "id": "x", "type": "i64", "value": 2},
+        {"op": "const", "id": "cond", "type": "bool", "value": True},
+        {
+            "op": "if",
+            "id": "selected",
+            "type": "i64",
+            "cond": "cond",
+            "then": [
+                {"op": "invariant.check", "invariant": "positive", "args": ["x"]},
+                {"op": "yield", "value": "x"},
+            ],
+            "else": [{"op": "yield", "value": "x"}],
+        },
+        {"op": "return", "value": "selected"},
+    ]
+    verify_program(p)
+    assert run_program(p, output=lambda _: None).value == 2
+
+
+def test_invariant_predicate_nodes_consume_step_budget():
+    p = invariant_program()
+    p["limits"]["steps"] = 4
+    # const=1, invariant.check instruction=2, predicate root=3, var leaf=4;
+    # constant leaf attempts step 5.
+    try:
+        run_program(p, output=lambda _: None)
+    except ExecutionError as exc:
+        assert exc.code == "apl.resource_limit"
+        assert exc.where == "main[1].predicate.args[1]"
+    else:
+        raise AssertionError("expected ExecutionError")
+
+
+def test_contract_invariant_reference_consumes_call_and_definition_steps():
+    p = invariant_program(check=False)
+    p["functions"][0]["requires"] = [
+        contract_clause(
+            "positive_const",
+            "constant must be positive",
+            invariant_call("positive", contract_const("i64", 1)),
+        )
+    ]
+    p["limits"]["steps"] = 4
+    # invariant call node=1, argument const=2, invariant root=3,
+    # invariant var=4, invariant const attempts step 5.
+    try:
+        run_program(p, output=lambda _: None)
+    except ExecutionError as exc:
+        assert exc.code == "apl.resource_limit"
+        assert ".invariant[positive].args[1]" in exc.where
+    else:
+        raise AssertionError("expected ExecutionError")

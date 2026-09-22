@@ -1,0 +1,29 @@
+{
+  "apl":"0.0.14",
+  "module":"v014_invariant_nonbool",
+  "capabilities":[],
+  "limits":{"steps":20,"output_lines":0,"host_reads":0},
+  "invariants":[
+    {
+      "name":"bad",
+      "params":[{"name":"x","type":"i64"}],
+      "message":"predicate must be bool",
+      "predicate":{"var":"x"}
+    }
+  ],
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"i64",
+      "effects":[],
+      "requires":[],
+      "ensures":[],
+      "body":[
+        {"op":"const","id":"answer","type":"i64","value":42},
+        {"op":"return","value":"answer"}
+      ]
+    }
+  ]
+}

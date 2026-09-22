@@ -5,8 +5,14 @@ import re
 from typing import Any
 
 from . import SUPPORTED_LANGUAGE_VERSIONS
-from .contracts import verify_function_contracts
+from .contracts import verify_function_contracts, verify_invariant_predicate
 from .errors import VerificationError
+from .invariants import (
+    INVARIANT_NAME_RE,
+    MAX_INVARIANTS,
+    MAX_INVARIANT_MESSAGE_LENGTH,
+    MAX_INVARIANT_PARAMS,
+)
 from .quantities import (
     MAX_UNIT_EXPONENT,
     MAX_UNIT_TERMS,
@@ -18,7 +24,7 @@ from .ranges import I64_MAX, I64_MIN, is_range_type
 from .resources import RESOURCE_LIMIT_MAXIMA
 
 SUPPORTED_TYPES = {"i64", "bool", "string", "unit"}
-VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4, "0.0.5": 5, "0.0.6": 6, "0.0.7": 7, "0.0.8": 8, "0.0.9": 9, "0.0.10": 10, "0.0.11": 11, "0.0.12": 12, "0.0.13": 13}
+VERSION_LEVELS = {"0.0.1": 1, "0.0.2": 2, "0.0.3": 3, "0.0.4": 4, "0.0.5": 5, "0.0.6": 6, "0.0.7": 7, "0.0.8": 8, "0.0.9": 9, "0.0.10": 10, "0.0.11": 11, "0.0.12": 12, "0.0.13": 13, "0.0.14": 14}
 MAX_REPEAT_BOUND = 1_000_000
 MAX_ARRAY_LENGTH = 65_536
 MAX_RECORD_FIELDS = 256
@@ -180,6 +186,86 @@ def _validate_type(raw: Any, version: str, where: str) -> None:
     _fail(f"{where}: unrecognized structured type descriptor")
 
 
+def _read_invariants(
+    raw: Any,
+    version: str,
+) -> tuple[dict[str, tuple[Any, ...]], dict[str, dict[str, Any]]]:
+    _expect(isinstance(raw, list), "invariants must be a list")
+    _expect(
+        len(raw) <= MAX_INVARIANTS,
+        f"invariants may contain at most {MAX_INVARIANTS} definitions",
+    )
+
+    signatures: dict[str, tuple[Any, ...]] = {}
+    nodes: dict[str, dict[str, Any]] = {}
+
+    for index, invariant in enumerate(raw):
+        where = f"invariants[{index}]"
+        _expect(isinstance(invariant, dict), f"{where}: invariant must be an object")
+        _expect(
+            set(invariant) == {"name", "params", "message", "predicate"},
+            f"{where}: invariant must contain exactly 'name', 'params', 'message', and 'predicate'",
+        )
+
+        name = invariant.get("name")
+        _expect(
+            isinstance(name, str) and INVARIANT_NAME_RE.fullmatch(name) is not None,
+            f"{where}: invariant name must match [a-z][a-z0-9_.-]{{0,63}}",
+        )
+        _expect(name not in signatures, f"{where}: duplicate invariant '{name}'")
+
+        params = invariant.get("params")
+        _expect(isinstance(params, list), f"{where}: params must be a list")
+        _expect(
+            len(params) <= MAX_INVARIANT_PARAMS,
+            f"{where}: invariant may contain at most {MAX_INVARIANT_PARAMS} parameters",
+        )
+        param_names: set[str] = set()
+        param_types: list[Any] = []
+        for param_index, param in enumerate(params):
+            param_where = f"{where}.params[{param_index}]"
+            _expect(
+                isinstance(param, dict) and set(param) == {"name", "type"},
+                f"{param_where}: parameter must contain exactly 'name' and 'type'",
+            )
+            param_name = param.get("name")
+            param_type = param.get("type")
+            _expect(
+                isinstance(param_name, str) and bool(param_name),
+                f"{param_where}: parameter name must be non-empty",
+            )
+            _expect(
+                param_name not in param_names,
+                f"{param_where}: duplicate parameter '{param_name}'",
+            )
+            _validate_type(param_type, version, f"{param_where}.type")
+            _expect(param_type != "unit", f"{param_where}: invariant parameter cannot be unit")
+            param_names.add(param_name)
+            param_types.append(param_type)
+
+        message = invariant.get("message")
+        _expect(
+            isinstance(message, str)
+            and 1 <= len(message) <= MAX_INVARIANT_MESSAGE_LENGTH,
+            f"{where}: invariant message length must be in [1, {MAX_INVARIANT_MESSAGE_LENGTH}]",
+        )
+
+        signatures[name] = tuple(param_types)
+        nodes[name] = invariant
+
+    for name, invariant in nodes.items():
+        verify_invariant_predicate(
+            predicate=invariant["predicate"],
+            env_types={
+                param["name"]: param["type"]
+                for param in invariant["params"]
+            },
+            where=f"invariant '{name}'.predicate",
+        )
+
+    return signatures, nodes
+
+
 def _is_array_type(raw: Any) -> bool:
     return isinstance(raw, dict) and set(raw) == {"array", "len"}
 
@@ -208,10 +294,21 @@ def verify_program(program: Any) -> None:
     if _supports(version, 10):
         _validate_program_limits(program.get("limits"))
 
+    invariant_signatures: dict[str, tuple[Any, ...]] = {}
+    if _supports(version, 14):
+        invariant_signatures, _ = _read_invariants(
+            program.get("invariants"), version
+        )
+    else:
+        _expect(
+            "invariants" not in program,
+            "invariant declarations require APL 0.0.14",
+        )
+
     signatures: dict[str, Signature] = {}
     function_nodes: dict[str, dict[str, Any]] = {}
     for fn in functions:
-        name, sig = _read_signature(fn, version)
+        name, sig = _read_signature(fn, version, invariant_signatures if _supports(version, 14) else None)
         _expect(name not in signatures, f"duplicate function '{name}'")
         signatures[name] = sig
         function_nodes[name] = fn
@@ -228,6 +325,7 @@ def verify_program(program: Any) -> None:
             version=version,
             signatures=signatures,
             call_graph=call_graph,
+            invariant_signatures=invariant_signatures,
         )
 
     _verify_acyclic_calls(call_graph)
@@ -245,7 +343,11 @@ def verify_program(program: Any) -> None:
         )
 
 
-def _read_signature(fn: Any, version: str) -> tuple[str, Signature]:
+def _read_signature(
+    fn: Any,
+    version: str,
+    invariant_signatures: dict[str, tuple[Any, ...]] | None,
+) -> tuple[str, Signature]:
     _expect(isinstance(fn, dict), "function must be an object")
     name = fn.get("name")
     _expect(isinstance(name, str) and bool(name), "function name must be non-empty")
@@ -278,6 +380,7 @@ def _read_signature(fn: Any, version: str) -> tuple[str, Signature]:
             env_types={param["name"]: param["type"] for param in params},
             result_type=returns,
             function_name=name,
+            invariant_signatures=invariant_signatures,
         )
     else:
         _expect(
@@ -296,6 +399,7 @@ def _verify_function_body(
     version: str,
     signatures: dict[str, Signature],
     call_graph: dict[str, set[str]],
+    invariant_signatures: dict[str, tuple[Any, ...]],
 ) -> None:
     name = fn["name"]
     env = {p["name"]: p["type"] for p in fn["params"]}
@@ -311,6 +415,7 @@ def _verify_function_body(
         terminator="return",
         result_type=fn["returns"],
         where_prefix=name,
+        invariant_signatures=invariant_signatures,
     )
     if _supports(version, 8):
         declared = set(signatures[name].effects)
@@ -333,6 +438,7 @@ def _verify_sequence(
     terminator: str,
     result_type: Any,
     where_prefix: str,
+    invariant_signatures: dict[str, tuple[Any, ...]],
 ) -> None:
     _expect(isinstance(instructions, list) and instructions,
             f"{where_prefix}: block must be a non-empty list")
@@ -393,6 +499,7 @@ def _verify_sequence(
                 call_graph=call_graph,
                 effects_used=effects_used,
                 where=where,
+                invariant_signatures=invariant_signatures,
             )
         elif op == "repeat":
             _expect(_supports(version, 4), f"{where}: repeat requires APL 0.0.4")
@@ -405,6 +512,7 @@ def _verify_sequence(
                 call_graph=call_graph,
                 effects_used=effects_used,
                 where=where,
+                invariant_signatures=invariant_signatures,
             )
         elif op == "array":
             _expect(_supports(version, 5), f"{where}: array requires APL 0.0.5")
@@ -427,6 +535,9 @@ def _verify_sequence(
         elif op == "range.value":
             _expect(_supports(version, 12), f"{where}: range.value requires APL 0.0.12")
             _verify_range_value(ins, env, where)
+        elif op == "invariant.check":
+            _expect(_supports(version, 14), f"{where}: invariant.check requires APL 0.0.14")
+            _verify_invariant_check(ins, env, invariant_signatures, where)
         elif op == "quantity.attach":
             _expect(_supports(version, 13), f"{where}: quantity.attach requires APL 0.0.13")
             _verify_quantity_attach(ins, env, version, where)
@@ -559,6 +670,7 @@ def _verify_if(
     call_graph: dict[str, set[str]],
     effects_used: set[str],
     where: str,
+    invariant_signatures: dict[str, tuple[Any, ...]],
 ) -> None:
     cond = ins.get("cond")
     _expect(isinstance(cond, str), f"{where}: if cond must be an SSA id")
@@ -583,6 +695,7 @@ def _verify_if(
             terminator="yield",
             result_type=result_type,
             where_prefix=f"{where}.{label}",
+            invariant_signatures=invariant_signatures,
         )
 
     _bind_result(ins, env, result_type, where)
@@ -598,6 +711,7 @@ def _verify_repeat(
     call_graph: dict[str, set[str]],
     effects_used: set[str],
     where: str,
+    invariant_signatures: dict[str, tuple[Any, ...]],
 ) -> None:
     count = ins.get("count")
     _expect(isinstance(count, str), f"{where}: repeat count must be an SSA id")
@@ -642,6 +756,7 @@ def _verify_repeat(
         terminator="yield",
         result_type=result_type,
         where_prefix=f"{where}.body",
+        invariant_signatures=invariant_signatures,
     )
 
     _bind_result(ins, env, result_type, where)
@@ -700,6 +815,40 @@ def _verify_array_len(
     _expect(_is_array_type(array_type),
             f"{where}: array.len arg must be an array")
     _bind_result(ins, env, "i64", where)
+
+
+def _verify_invariant_check(
+    ins: dict[str, Any],
+    env: dict[str, Any],
+    invariant_signatures: dict[str, tuple[Any, ...]],
+    where: str,
+) -> None:
+    _expect(
+        set(ins) == {"op", "invariant", "args"},
+        f"{where}: invariant.check must contain exactly 'op', 'invariant', and 'args'",
+    )
+    name = ins.get("invariant")
+    _expect(
+        isinstance(name, str) and name in invariant_signatures,
+        f"{where}: unknown invariant '{name}'",
+    )
+    args = ins.get("args")
+    _expect(isinstance(args, list), f"{where}: invariant.check args must be a list")
+    expected_types = invariant_signatures[name]
+    _expect(
+        len(args) == len(expected_types),
+        f"{where}: invariant '{name}' expects {len(expected_types)} args, got {len(args)}",
+    )
+    for index, (arg, expected_type) in enumerate(zip(args, expected_types)):
+        _expect(
+            isinstance(arg, str),
+            f"{where}: invariant.check arg {index} must be an SSA id",
+        )
+        actual_type = _value_type(arg, env, where)
+        _expect(
+            actual_type == expected_type,
+            f"{where}: invariant arg {index} expects '{expected_type}', got '{actual_type}'",
+        )
 
 
 def _verify_quantity_attach(

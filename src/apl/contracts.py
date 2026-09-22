@@ -58,6 +58,7 @@ def _predicate_type(
     where: str,
     depth: int,
     nodes: list[int],
+    invariant_signatures: dict[str, tuple[Any, ...]] | None = None,
 ) -> Any:
     _expect(isinstance(expr, dict), f"{where}: predicate node must be an object")
     _expect(depth <= MAX_PREDICATE_DEPTH, f"{where}: predicate depth exceeds {MAX_PREDICATE_DEPTH}")
@@ -81,6 +82,40 @@ def _predicate_type(
     if set(expr) == {"const"}:
         return _const_type(expr["const"], f"{where}.const")
 
+    if set(expr) == {"invariant", "args"}:
+        name = expr.get("invariant")
+        args = expr.get("args")
+        _expect(
+            invariant_signatures is not None,
+            f"{where}: invariant references require APL 0.0.14",
+        )
+        _expect(
+            isinstance(name, str) and name in invariant_signatures,
+            f"{where}: unknown invariant '{name}'",
+        )
+        _expect(isinstance(args, list), f"{where}: invariant args must be a list")
+        expected_types = invariant_signatures[name]
+        _expect(
+            len(args) == len(expected_types),
+            f"{where}: invariant '{name}' expects {len(expected_types)} args, got {len(args)}",
+        )
+        for index, (arg, expected_type) in enumerate(zip(args, expected_types)):
+            actual_type = _predicate_type(
+                arg,
+                env_types=env_types,
+                result_type=result_type,
+                allow_result=allow_result,
+                where=f"{where}.args[{index}]",
+                depth=depth + 1,
+                nodes=nodes,
+                invariant_signatures=invariant_signatures,
+            )
+            _expect(
+                actual_type == expected_type,
+                f"{where}: invariant arg {index} expects '{expected_type}', got '{actual_type}'",
+            )
+        return "bool"
+
     _expect(set(expr) == {"op", "args"}, f"{where}: unrecognized predicate node")
     op = expr.get("op")
     args = expr.get("args")
@@ -103,6 +138,7 @@ def _predicate_type(
             where=f"{where}.args[{index}]",
             depth=depth + 1,
             nodes=nodes,
+            invariant_signatures=invariant_signatures,
         )
         for index, arg in enumerate(args)
     ]
@@ -140,6 +176,7 @@ def _verify_contract_list(
     result_type: Any,
     allow_result: bool,
     where: str,
+    invariant_signatures: dict[str, tuple[Any, ...]] | None,
 ) -> set[str]:
     _expect(isinstance(raw, list), f"{where} must be a list")
     _expect(len(raw) <= MAX_CONTRACTS_PER_KIND, f"{where} may contain at most {MAX_CONTRACTS_PER_KIND} contracts")
@@ -175,6 +212,7 @@ def _verify_contract_list(
             where=f"{clause_where}.predicate",
             depth=1,
             nodes=nodes,
+            invariant_signatures=invariant_signatures,
         )
         _expect(predicate_type == "bool", f"{clause_where}: contract predicate must have type 'bool'")
     return ids
@@ -187,6 +225,7 @@ def verify_function_contracts(
     env_types: dict[str, Any],
     result_type: Any,
     function_name: str,
+    invariant_signatures: dict[str, tuple[Any, ...]] | None = None,
 ) -> None:
     require_ids = _verify_contract_list(
         requires,
@@ -194,6 +233,7 @@ def verify_function_contracts(
         result_type=result_type,
         allow_result=False,
         where=f"{function_name}: requires",
+        invariant_signatures=invariant_signatures,
     )
     ensure_ids = _verify_contract_list(
         ensures,
@@ -201,9 +241,31 @@ def verify_function_contracts(
         result_type=result_type,
         allow_result=True,
         where=f"{function_name}: ensures",
+        invariant_signatures=invariant_signatures,
     )
     overlap = sorted(require_ids & ensure_ids)
     _expect(not overlap, f"{function_name}: contract ids must be unique across requires/ensures: {overlap}")
+
+
+
+def verify_invariant_predicate(
+    *,
+    predicate: Any,
+    env_types: dict[str, Any],
+    where: str,
+) -> None:
+    nodes = [0]
+    predicate_type = _predicate_type(
+        predicate,
+        env_types=env_types,
+        result_type="unit",
+        allow_result=False,
+        where=where,
+        depth=1,
+        nodes=nodes,
+        invariant_signatures={},
+    )
+    _expect(predicate_type == "bool", f"{where}: invariant predicate must have type 'bool'")
 
 
 def _eval_expr(
@@ -214,6 +276,7 @@ def _eval_expr(
     allow_result: bool,
     budget: ExecutionBudget,
     where: str,
+    invariant_definitions: dict[str, dict[str, Any]] | None = None,
 ) -> Any:
     budget.consume_step(where)
 
@@ -226,6 +289,37 @@ def _eval_expr(
     if set(expr) == {"const"}:
         return expr["const"]["value"]
 
+    if set(expr) == {"invariant", "args"}:
+        if invariant_definitions is None:
+            raise RuntimeError("verified invariant reference has no runtime definitions")
+        name = expr["invariant"]
+        definition = invariant_definitions[name]
+        arg_values = [
+            _eval_expr(
+                arg,
+                values=values,
+                result_value=result_value,
+                allow_result=allow_result,
+                budget=budget,
+                where=f"{where}.args[{index}]",
+                invariant_definitions=invariant_definitions,
+            )
+            for index, arg in enumerate(expr["args"])
+        ]
+        invariant_values = {
+            param["name"]: value
+            for param, value in zip(definition["params"], arg_values)
+        }
+        return _eval_expr(
+            definition["predicate"],
+            values=invariant_values,
+            result_value=None,
+            allow_result=False,
+            budget=budget,
+            where=f"{where}.invariant[{name}]",
+            invariant_definitions=invariant_definitions,
+        )
+
     op = expr["op"]
     args = expr["args"]
     evaluated = [
@@ -236,6 +330,7 @@ def _eval_expr(
             allow_result=allow_result,
             budget=budget,
             where=f"{where}.args[{index}]",
+            invariant_definitions=invariant_definitions,
         )
         for index, arg in enumerate(args)
     ]
@@ -259,6 +354,32 @@ def _eval_expr(
     raise RuntimeError(f"unsupported verified contract op {op!r}")
 
 
+
+def evaluate_named_invariant(
+    definition: dict[str, Any],
+    *,
+    arguments: list[Any],
+    budget: ExecutionBudget,
+    where: str,
+    invariant_definitions: dict[str, dict[str, Any]],
+) -> bool:
+    values = {
+        param["name"]: value
+        for param, value in zip(definition["params"], arguments)
+    }
+    return bool(
+        _eval_expr(
+            definition["predicate"],
+            values=values,
+            result_value=None,
+            allow_result=False,
+            budget=budget,
+            where=f"{where}.predicate",
+            invariant_definitions=invariant_definitions,
+        )
+    )
+
+
 def evaluate_contracts(
     clauses: list[dict[str, Any]],
     *,
@@ -268,6 +389,7 @@ def evaluate_contracts(
     budget: ExecutionBudget,
     function_name: str,
     kind: str,
+    invariant_definitions: dict[str, dict[str, Any]] | None = None,
 ) -> None:
     trap_code = "apl.precondition_failed" if kind == "requires" else "apl.postcondition_failed"
     for index, clause in enumerate(clauses):
@@ -279,6 +401,7 @@ def evaluate_contracts(
             allow_result=allow_result,
             budget=budget,
             where=f"{where}.predicate",
+            invariant_definitions=invariant_definitions,
         )
         if not passed:
             raise ExecutionError(

@@ -1,0 +1,30 @@
+{
+  "apl":"0.0.14",
+  "module":"v014_invariant_check_type",
+  "capabilities":[],
+  "limits":{"steps":20,"output_lines":0,"host_reads":0},
+  "invariants":[
+    {
+      "name":"positive",
+      "params":[{"name":"x","type":"i64"}],
+      "message":"x must be positive",
+      "predicate":{"op":"gt","args":[{"var":"x"},{"const":{"type":"i64","value":0}}]}
+    }
+  ],
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"bool",
+      "effects":[],
+      "requires":[],
+      "ensures":[],
+      "body":[
+        {"op":"const","id":"flag","type":"bool","value":true},
+        {"op":"invariant.check","invariant":"positive","args":["flag"]},
+        {"op":"return","value":"flag"}
+      ]
+    }
+  ]
+}
