@@ -116,6 +116,16 @@ async function instantiateAplWasm(path, options = {}) {
         error.aplWhere = decodeString(whereHandle);
         throw error;
       },
+      alloc(size) {
+        if (!state.memory) {
+          throw new Error("APL WASM memory is not available for allocation");
+        }
+        const aligned = (state.heap + 7) & ~7;
+        const end = aligned + size;
+        ensureCapacity(end);
+        state.heap = end;
+        return aligned;
+      },
       console_write_i64(value) {
         state.output.push(value.toString());
       },
