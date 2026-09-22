@@ -16,6 +16,7 @@ TRAP_I64_OVERFLOW = 1
 TRAP_DIVISION_BY_ZERO = 2
 TRAP_REPEAT_NEGATIVE_COUNT = 3
 TRAP_REPEAT_COUNT_EXCEEDS_MAX = 4
+TRAP_STEP_RESOURCE_LIMIT = 5
 
 
 def _u32(value: int) -> bytes:
@@ -130,10 +131,12 @@ class _FunctionCompiler:
         *,
         function_indices: dict[str, int],
         signatures: dict[str, tuple[list[Any], Any]],
+        step_global_index: int | None,
     ) -> None:
         self.fn = fn
         self.function_indices = function_indices
         self.signatures = signatures
+        self.step_global_index = step_global_index
         self.types: dict[str, Any] = {
             param["id"]: param["type"] for param in fn["params"]
         }
@@ -347,7 +350,19 @@ class _FunctionCompiler:
         name = op["op"]
 
         if name == "budget.step":
-            return b""
+            if self.step_global_index is None:
+                return b""
+            index = self.step_global_index
+            exhausted = _op(0x23, _u32(index), 0x50)
+            decrement = (
+                _op(0x23, _u32(index))
+                + _op(0x42, _sleb(1, 64), 0x7D)
+                + _op(0x24, _u32(index))
+            )
+            return (
+                _guard_if(exhausted, _trap(TRAP_STEP_RESOURCE_LIMIT))
+                + decrement
+            )
 
         if name == "repeat.guard":
             count = op["count"]
@@ -572,10 +587,8 @@ def compile_lir_to_wasm(lir: dict[str, Any]) -> WasmArtifact:
         raise CompilationError(
             "WASM scalar backend does not support host capabilities yet"
         )
-    if any(value is not None for value in runtime["limits"].values()):
-        raise CompilationError(
-            "WASM scalar backend does not support APL resource budgets yet"
-        )
+    step_limit = runtime["limits"]["steps"]
+    step_global_index = 0 if step_limit is not None else None
 
     functions = lir["functions"]
     signatures = {
@@ -619,11 +632,20 @@ def compile_lir_to_wasm(lir: dict[str, Any]) -> WasmArtifact:
     export_entry = _name("apl_entry") + bytes([0x00]) + _u32(entry_index)
     export_section = _section(7, _vec([export_entry]))
 
+    global_section = b""
+    if step_limit is not None:
+        global_entry = (
+            bytes([WASM_I64, 0x01])
+            + _op(0x42, _sleb(step_limit, 64), 0x0B)
+        )
+        global_section = _section(6, _vec([global_entry]))
+
     code_entries = [
         _FunctionCompiler(
             fn,
             function_indices=function_indices,
             signatures=signatures,
+            step_global_index=step_global_index,
         ).compile()
         for fn in functions
     ]
@@ -634,6 +656,7 @@ def compile_lir_to_wasm(lir: dict[str, Any]) -> WasmArtifact:
         + type_section
         + import_section
         + function_section
+        + global_section
         + export_section
         + code_section
     )
