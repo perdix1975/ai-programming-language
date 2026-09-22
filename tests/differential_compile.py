@@ -17,6 +17,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("manifest")
     parser.add_argument("output_dir")
+    parser.add_argument(
+        "--optimize",
+        action="store_true",
+        help="compile through the verified LIR optimizer",
+    )
     args = parser.parse_args()
 
     manifest = _load_json(args.manifest)
@@ -35,7 +40,10 @@ def main() -> int:
             program = _load_json(source)
             if not isinstance(program, dict):
                 raise TypeError(f"{source}: program root must be an object")
-            compiled_sources[source] = compile_program_to_wasm(program).binary
+            compiled_sources[source] = compile_program_to_wasm(
+                program,
+                optimize=args.optimize,
+            ).binary
         (output_dir / f"{name}.wasm").write_bytes(compiled_sources[source])
 
     return 0
