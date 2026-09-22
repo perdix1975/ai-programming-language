@@ -1379,7 +1379,7 @@ The generated function uses:
 
 Each `primitive.call` is replaced by an ordinary `call` to that hidden function while preserving argument order, result id, and result type.
 
-User functions in Draft 0.0.15 may not begin with the reserved prefix `__apl_primitive_`.
+User functions in Draft 0.0.15 may not begin with the reserved prefix `__apl_primitive_`. Source-level ordinary `call` instructions may not target that reserved namespace; invocation of a declared semantic primitive must use `primitive.call`.
 
 Generated primitive functions are ordered by primitive id, making lowering deterministic regardless of declaration traversal implementation.
 
