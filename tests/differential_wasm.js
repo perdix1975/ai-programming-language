@@ -2,6 +2,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const {isDeepStrictEqual} = require("util");
 const {instantiateAplWasm} = require("./wasm_runtime.js");
 
 const TRAP_CODES = {
@@ -88,12 +89,23 @@ async function runCompiled(caseDef, expected, wasmDir) {
   }
 }
 
+function canonicalJson(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
 function assertSame(name, expected, actual) {
-  const expectedText = JSON.stringify(expected);
-  const actualText = JSON.stringify(actual);
-  if (expectedText !== actualText) {
+  if (!isDeepStrictEqual(expected, actual)) {
     throw new Error(
-      `differential mismatch for ${name}\nexpected: ${expectedText}\nactual:   ${actualText}`
+      `differential mismatch for ${name}\nexpected: ${canonicalJson(expected)}\nactual:   ${canonicalJson(actual)}`
     );
   }
 }
