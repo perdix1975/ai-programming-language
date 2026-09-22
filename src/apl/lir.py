@@ -503,11 +503,15 @@ class _FunctionLowerer:
         }
         if op in binary_map:
             typ = "bool" if op in {"lt", "le", "gt", "ge", "eq"} else ins["type"]
+            fields: dict[str, Any] = {
+                "args": [env[name][0] for name in ins["args"]]
+            }
+            if op in {"add", "sub", "mul", "div", "rem"}:
+                fields["where"] = where
             value = self._emit_value(
                 binary_map[op],
                 typ,
-                args=[env[name][0] for name in ins["args"]],
-                where=where,
+                **fields,
             )
             env[ins["id"]] = value
             return
