@@ -82,7 +82,7 @@ Conformance covers:
 - unknown primitive rejection;
 - rejection of function or primitive calls inside primitive definitions;
 - rejection of effectful primitive bodies through the existing exact-effect verifier;
-- reserved generated-function namespace enforcement;
+- reserved generated-function namespace enforcement for both user declarations and ordinary source call targets;
 - reuse of ordinary core call arity/result-type verification after lowering;
 - deterministic lowering to hidden core functions;
 - absence of `primitive.call` from normalized LIR;
