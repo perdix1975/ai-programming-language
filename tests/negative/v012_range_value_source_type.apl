@@ -1,0 +1,22 @@
+{
+  "apl":"0.0.12",
+  "module":"v012_range_value_source_type",
+  "capabilities":[],
+  "limits":{"steps":10,"output_lines":0,"host_reads":0},
+  "entry":"main",
+  "functions":[
+    {
+      "name":"main",
+      "params":[],
+      "returns":"i64",
+      "effects":[],
+      "requires":[],
+      "ensures":[],
+      "body":[
+        {"op":"const","id":"raw","type":"i64","value":5},
+        {"op":"range.value","id":"wide","type":"i64","args":["raw"]},
+        {"op":"return","value":"wide"}
+      ]
+    }
+  ]
+}

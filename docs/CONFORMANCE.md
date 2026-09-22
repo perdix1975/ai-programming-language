@@ -49,6 +49,8 @@ The initial corpus covers:
 - deterministic host operation argument typing;
 - missing, malformed, or excessive Draft 0.0.10 resource-limit declarations;
 - missing Draft 0.0.11 contract lists;
-- invalid contract result scope, predicate typing, and duplicate contract identifiers.
+- invalid contract result scope, predicate typing, and duplicate contract identifiers;
+- pre-0.0.12 range-type use;
+- invalid range bounds and invalid explicit range conversion operands.
 
 The corpus should grow whenever a verifier bug, ambiguity, or new language rule is introduced.
