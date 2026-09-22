@@ -2659,8 +2659,20 @@ def test_quantity_derived_exponent_limit_is_checked():
 
 
 def test_v012_rejects_quantity_types():
-    p = quantity_program()
+    p = limited_pure_program()
     p["apl"] = "0.0.12"
+    p["functions"].insert(
+        0,
+        {
+            "name": "identity_quantity",
+            "params": [{"name": "x", "type": quantity_type(m=1)}],
+            "returns": quantity_type(m=1),
+            "effects": [],
+            "requires": [],
+            "ensures": [],
+            "body": [{"op": "return", "value": "x"}],
+        },
+    )
     try:
         verify_program(p)
     except VerificationError as exc:
