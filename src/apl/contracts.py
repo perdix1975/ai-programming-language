@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from .errors import ExecutionError, VerificationError
+from .ranges import is_range_type
 from .resources import ExecutionBudget
 
 
@@ -110,7 +111,14 @@ def _predicate_type(
         _expect(arg_types[0] != "unit", f"{where}: unit is not comparable")
         return "bool"
     if op in {"lt", "le", "gt", "ge"}:
-        _expect(arg_types[0] == arg_types[1] == "i64", f"{where}: {op} requires i64 args")
+        same_integer_type = (
+            arg_types[0] == arg_types[1]
+            and (arg_types[0] == "i64" or is_range_type(arg_types[0]))
+        )
+        _expect(
+            same_integer_type,
+            f"{where}: {op} requires identical i64 or range args",
+        )
         return "bool"
     if op == "not":
         _expect(arg_types[0] == "bool", f"{where}: not requires bool arg")
