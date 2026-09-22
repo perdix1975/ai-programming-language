@@ -64,6 +64,10 @@ Current deterministic trap codes are:
 | 3 | `apl.repeat_negative_count` |
 | 4 | `apl.repeat_count_exceeds_max` |
 | 5 | `apl.resource_limit` for exhausted `steps` |
+| 6 | `apl.precondition_failed` |
+| 7 | `apl.postcondition_failed` |
+| 8 | `apl.invariant_failed` |
+| 9 | `apl.range_violation` |
 
 The compiler emits an `unreachable` immediately after the import call so a nonconforming host that returns still cannot continue execution.
 
@@ -81,15 +85,17 @@ The scalar checkpoint supports:
 - verified multi-block CFG with `br`/`cond_br` and typed block-parameter transfers;
 - bounded `repeat` loops and their runtime count guards;
 - module-wide `steps` resource budgets shared across function calls;
+- contract and reusable-invariant guards;
+- bounded range refinement/widening represented as checked `i64`;
+- symbolic quantities represented as checked `i64` values with static type algebra already verified by LIR;
 - scalar/unit returns.
 
 Compilation currently rejects:
 
 - strings;
-- arrays, records, ranges and quantities;
-- contracts/invariant guards;
-- explicit traps;
-- host effects/capabilities;
+- arrays and records;
+- explicit application-defined traps, pending a diagnostic-preserving trap ABI;
+- host effects/capabilities (`console.write`, filesystem and network reads);
 - output-line and host-read budget consumption until those corresponding effects are implemented.
 
 Unsupported semantics fail at compile time with `CompilationError`; they are never silently approximated.
@@ -115,6 +121,6 @@ The command verifies source APL, lowers it to verified LIR, compiles the support
 
 ## Differential testing
 
-CI loads emitted binaries with the native Node/WebAssembly runtime and compares successful entry results against the APL reference interpreter. It also checks the deterministic trap ABI for overflow and division-by-zero.
+CI loads emitted binaries with the native Node/WebAssembly runtime and checks successful compiled results for scalar arithmetic, calls, structured `if`, bounded `repeat`, step budgets, contracts, ranges, quantities and invariants. It also validates deterministic trap codes for arithmetic, repeat guards, exhausted step budgets, failed contracts/invariants and range violations.
 
-This is the first WASM backend checkpoint, not the completion of M4. Subsequent work expands CFG lowering, resource budgets, structured data, effects, and full trap diagnostics.
+This is a substantial WASM backend checkpoint, not the completion of M4. Remaining backend work centers on structured data/string representation, observable host effects, output/host-read budgets, application-defined trap diagnostics, and broader optimization/equivalence testing.
