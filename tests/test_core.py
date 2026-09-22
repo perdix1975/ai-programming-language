@@ -2340,7 +2340,7 @@ def test_contract_ordered_comparison_rejects_range_vs_i64():
     try:
         verify_program(p)
     except VerificationError as exc:
-        assert "requires identical i64 or range args" in str(exc)
+        assert "requires identical i64, range, or quantity args" in str(exc)
     else:
         raise AssertionError("expected VerificationError")
 
