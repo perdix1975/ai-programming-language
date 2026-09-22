@@ -921,12 +921,39 @@ def compile_lir_to_wasm(lir: dict[str, Any]) -> WasmArtifact:
         string_constants
     )
 
+    needs_structured_memory = any(
+        _is_array_type(typ) or _is_record_type(typ)
+        for fn in functions
+        for typ in (
+            [fn["returns"]]
+            + [param["type"] for param in fn["params"]]
+            + [
+                param["type"]
+                for block in fn["blocks"]
+                for param in block["params"]
+            ]
+            + [
+                op["type"]
+                for block in fn["blocks"]
+                for op in block["ops"]
+                if "type" in op
+            ]
+        )
+    )
+    needs_alloc = any(
+        op["op"] in {"array.make", "record.make"}
+        for fn in functions
+        for block in fn["blocks"]
+        for op in block["ops"]
+    )
+
     needs_memory = (
         bool(string_constants)
         or needs_fs
         or needs_net
         or needs_string_eq
         or needs_application_trap
+        or needs_structured_memory
         or "string" in console_types
         or any(
         fn["returns"] == "string"
@@ -947,14 +974,19 @@ def compile_lir_to_wasm(lir: dict[str, Any]) -> WasmArtifact:
     )
 
     capabilities = runtime["capabilities"]
-    capability_mask = 0
+    inferred_capability_mask = 0
     for capability in capabilities:
         try:
-            capability_mask |= CAPABILITY_BITS[capability]
+            inferred_capability_mask |= CAPABILITY_BITS[capability]
         except KeyError as exc:
             raise CompilationError(
                 f"unsupported WASM capability {capability!r}"
             ) from exc
+    capability_mask = (
+        inferred_capability_mask
+        if runtime["capability_grants_required"]
+        else 0
+    )
 
     import_specs: list[tuple[str, list[Any], Any]] = [
         ("trap", ["bool"], "unit"),
@@ -967,6 +999,8 @@ def compile_lir_to_wasm(lir: dict[str, Any]) -> WasmArtifact:
         import_specs.append(
             ("application_trap", ["string", "string", "string"], "unit")
         )
+    if needs_alloc:
+        import_specs.append(("alloc", ["bool"], "bool"))
     for typ, import_name in (
         ("i64", "console_write_i64"),
         ("bool", "console_write_bool"),
