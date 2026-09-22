@@ -406,6 +406,33 @@ jobs:
           });
           NODE
 
+      - name: Verify semantic primitive lowering certificates
+        run: |
+          apl lower-core examples/semantic_primitives.apl > /tmp/semantic_primitives.core.apl
+          apl lowering-proof examples/semantic_primitives.apl > /tmp/semantic_primitives.proof.json
+          apl lower-core examples/semantic_primitives.apl > /tmp/semantic_primitives.core2.apl
+          apl lowering-proof examples/semantic_primitives.apl > /tmp/semantic_primitives.proof2.json
+          cmp /tmp/semantic_primitives.core.apl /tmp/semantic_primitives.core2.apl
+          cmp /tmp/semantic_primitives.proof.json /tmp/semantic_primitives.proof2.json
+          apl verify-lowering-proof \
+            examples/semantic_primitives.apl \
+            /tmp/semantic_primitives.core.apl \
+            /tmp/semantic_primitives.proof.json
+          python - <<'PY'
+          import json
+          path = "/tmp/semantic_primitives.core.apl"
+          core = json.load(open(path, encoding="utf-8"))
+          main = next(fn for fn in core["functions"] if fn["name"] == "main")
+          main["body"][0]["value"] = 7
+          json.dump(core, open("/tmp/tampered.core.apl", "w", encoding="utf-8"))
+          PY
+          set +e
+          output="$(apl verify-lowering-proof examples/semantic_primitives.apl /tmp/tampered.core.apl /tmp/semantic_primitives.proof.json)"
+          status=$?
+          set -e
+          test "$status" -eq 2
+          test "$output" = 'APL error: lowered core artifact does not match deterministic replay'
+
       - name: Verify optimizer and interpreter-WASM differential equivalence
         run: |
           apl optimize examples/wasm_scalar.apl > /tmp/wasm_scalar.optimized.lir.json
