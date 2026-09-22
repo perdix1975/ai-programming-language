@@ -1,5 +1,5 @@
 from apl.canonical import canonical_text, semantic_hash
-from apl.errors import ExecutionError, VerificationError
+from apl.errors import CompilationError, ExecutionError, VerificationError
 from apl.host import DeterministicHost
 from apl.interpreter import run_program
 from apl.lir import lower_hash, lower_program, verify_lir
@@ -3546,7 +3546,7 @@ def test_wasm_backend_emits_real_deterministic_binary():
 def test_wasm_backend_rejects_observable_effects_until_host_abi_exists():
     try:
         compile_program_to_wasm(effectful_program())
-    except Exception as exc:
+    except CompilationError as exc:
         assert "host capabilities" in str(exc) or "pure function" in str(exc)
     else:
         raise AssertionError("expected backend compilation failure")
@@ -3555,7 +3555,7 @@ def test_wasm_backend_rejects_observable_effects_until_host_abi_exists():
 def test_wasm_backend_rejects_multi_block_cfg_until_structured_backend_exists():
     try:
         compile_program_to_wasm(functions_if_program())
-    except Exception as exc:
-        assert "requires one b0 block" in str(exc)
+    except CompilationError as exc:
+        assert "general CFG" in str(exc)
     else:
         raise AssertionError("expected backend compilation failure")
