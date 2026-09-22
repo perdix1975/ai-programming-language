@@ -10,6 +10,7 @@ from .errors import AplError
 from .host import DeterministicHost
 from .interpreter import run_program
 from .lir import lower_hash, lower_program, verify_lir
+from .lowering_proof import build_lowering_proof, lower_core_program, verify_lowering_proof
 from .optimize import optimize_lir, optimize_program
 from .primitives import primitive_id
 from .resources import ResourceLimits
@@ -84,6 +85,26 @@ def main() -> int:
     )
     p_lower_hash.add_argument("file")
 
+    p_lower_core = sub.add_parser(
+        "lower-core",
+        help="emit the verified primitive-lowered core APL program",
+    )
+    p_lower_core.add_argument("file")
+
+    p_lowering_proof = sub.add_parser(
+        "lowering-proof",
+        help="emit a deterministic replay-verifiable lowering certificate",
+    )
+    p_lowering_proof.add_argument("file")
+
+    p_verify_lowering = sub.add_parser(
+        "verify-lowering-proof",
+        help="verify source, lowered core, and lowering certificate by replay",
+    )
+    p_verify_lowering.add_argument("file")
+    p_verify_lowering.add_argument("core")
+    p_verify_lowering.add_argument("proof")
+
     p_verify_lir = sub.add_parser("verify-lir", help="verify normalized compiler LIR")
     p_verify_lir.add_argument("file")
 
@@ -138,6 +159,17 @@ def main() -> int:
             print(canonical_text(lower_program(program)))
         elif args.command == "lower-hash":
             print(lower_hash(program))
+        elif args.command == "lower-core":
+            print(canonical_text(lower_core_program(program)))
+        elif args.command == "lowering-proof":
+            print(canonical_text(build_lowering_proof(program)))
+        elif args.command == "verify-lowering-proof":
+            verify_lowering_proof(
+                program,
+                _load(args.core),
+                _load(args.proof),
+            )
+            print("valid")
         elif args.command == "verify-lir":
             verify_lir(program)
             print("valid")
