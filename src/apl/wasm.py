@@ -5,6 +5,8 @@ from typing import Any
 
 from .errors import CompilationError
 from .lir import lower_program, verify_lir
+from .quantities import is_quantity_type
+from .ranges import is_range_type, range_bounds
 
 
 WASM_MAGIC_VERSION = b"\x00asm\x01\x00\x00\x00"
@@ -17,6 +19,10 @@ TRAP_DIVISION_BY_ZERO = 2
 TRAP_REPEAT_NEGATIVE_COUNT = 3
 TRAP_REPEAT_COUNT_EXCEEDS_MAX = 4
 TRAP_STEP_RESOURCE_LIMIT = 5
+TRAP_PRECONDITION_FAILED = 6
+TRAP_POSTCONDITION_FAILED = 7
+TRAP_INVARIANT_FAILED = 8
+TRAP_RANGE_VIOLATION = 9
 
 
 def _u32(value: int) -> bytes:
@@ -62,12 +68,13 @@ def _section(section_id: int, payload: bytes) -> bytes:
 
 
 def _value_type(typ: Any) -> int:
-    if typ == "i64":
+    if typ == "i64" or is_range_type(typ) or is_quantity_type(typ):
         return WASM_I64
     if typ == "bool":
         return WASM_I32
     raise CompilationError(
-        f"WASM scalar backend supports only i64/bool values, got {typ!r}"
+        "WASM scalar backend supports i64/bool/range/quantity values, "
+        f"got {typ!r}"
     )
 
 
@@ -329,9 +336,10 @@ class _FunctionCompiler:
         dest = self._index(op["id"])
         typ = self.types[a]
         name = op["op"]
+        wasm_type = _value_type(typ)
         if name == "value.eq":
-            opcode = 0x51 if typ == "i64" else 0x46 if typ == "bool" else None
-        elif typ == "i64":
+            opcode = 0x51 if wasm_type == WASM_I64 else 0x46 if wasm_type == WASM_I32 else None
+        elif wasm_type == WASM_I64:
             opcode = {
                 "value.lt": 0x53,
                 "value.gt": 0x55,
@@ -363,6 +371,53 @@ class _FunctionCompiler:
                 _guard_if(exhausted, _trap(TRAP_STEP_RESOURCE_LIMIT))
                 + decrement
             )
+
+        if name == "guard":
+            trap_code = {
+                "apl.precondition_failed": TRAP_PRECONDITION_FAILED,
+                "apl.postcondition_failed": TRAP_POSTCONDITION_FAILED,
+                "apl.invariant_failed": TRAP_INVARIANT_FAILED,
+            }.get(op["code"])
+            if trap_code is None:
+                raise CompilationError(
+                    f"unsupported normalized guard code {op['code']!r}"
+                )
+            failed = self._arg(op["cond"]) + _op(0x45)
+            return _guard_if(failed, _trap(trap_code))
+
+        if name == "range.check":
+            source = op["arg"]
+            dest = self._index(op["id"])
+            minimum, maximum = range_bounds(op["type"])
+            below = (
+                self._arg(source)
+                + _op(0x42, _sleb(minimum, 64), 0x53)
+            )
+            above = (
+                self._arg(source)
+                + _op(0x42, _sleb(maximum, 64), 0x55)
+            )
+            return (
+                _guard_if(below, _trap(TRAP_RANGE_VIOLATION))
+                + _guard_if(above, _trap(TRAP_RANGE_VIOLATION))
+                + self._arg(source)
+                + _local_set(dest)
+            )
+
+        if name in {"range.value", "quantity.attach", "quantity.value"}:
+            return (
+                self._arg(op["arg"])
+                + _local_set(self._index(op["id"]))
+            )
+
+        if name == "quantity.add":
+            return self._checked_add(op)
+        if name == "quantity.sub":
+            return self._checked_sub(op)
+        if name == "quantity.mul":
+            return self._checked_mul(op)
+        if name == "quantity.div":
+            return self._checked_div(op)
 
         if name == "repeat.guard":
             count = op["count"]
