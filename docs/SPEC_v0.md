@@ -1,6 +1,6 @@
 # APL Specification v0
 
-Status: **Draft 0.0.14**
+Status: **Draft 0.0.15**
 
 This document defines the executable v0 subset of APL. The purpose of v0 is to establish stable semantic machinery before adding proof propagation, concurrency, or native compilation.
 
@@ -23,7 +23,7 @@ The current reference implementation supports:
 - `0.0.11`: a strict extension adding typed declarative function preconditions and postconditions;
 - `0.0.12`: a strict extension adding structural bounded `i64` range types and explicit refinement/widening;
 - `0.0.13`: a strict extension adding symbolic structural quantity types and static unit-exponent algebra;
-- `0.0.14`: a strict extension adding reusable typed module invariants for contracts and explicit IR checks.
+- `0.0.14`: a strict extension adding reusable typed module invariants for contracts and explicit IR checks;\n- `0.0.15`: a strict extension adding content-addressed pure semantic primitives with deterministic lowering to the existing core.
 
 Older programs retain their declared-version meaning. An operation is valid only when introduced by that program's declared version or an earlier one.
 
@@ -39,7 +39,7 @@ A program object contains:
 - `functions`: non-empty list of function objects;
 - `capabilities`: in Draft 0.0.8+, the exact sorted list of host capabilities required by the module;
 - `limits`: in Draft 0.0.10+, the exact deterministic execution-budget object;
-- `invariants`: in Draft 0.0.14+, the ordered module-level reusable invariant definitions.
+- `invariants`: in Draft 0.0.14+, the ordered module-level reusable invariant definitions;\n- `primitives`: in Draft 0.0.15+, the ordered module-level content-addressed semantic primitive definitions.
 
 The entry function must exist and require zero parameters.
 
@@ -295,7 +295,7 @@ Two arrays may be compared with `eq` when their complete types are identical. Eq
 
 Structured array types may be used in function parameters, function return types, `if` results, and `repeat` carried values. Exact structural type equality is required; there are no implicit array conversions.
 
-`print` remains scalar-only through Draft 0.0.14.
+`print` remains scalar-only through Draft 0.0.15.
 
 ## 11. Draft 0.0.6 instructions
 
@@ -1255,7 +1255,157 @@ APL 0.0.1 through 0.0.13 do not contain a module `invariants` declaration. Decla
 
 Draft 0.0.14 programs must contain the explicit invariant list. Invariant-reference predicate nodes and `invariant.check` are valid only under Draft 0.0.14 semantics.
 
-## 20. Verification
+## 20. Draft 0.0.15 content-addressed semantic primitives
+
+### 20.1 purpose
+
+Draft 0.0.15 introduces a reusable AI-native semantic abstraction that does not enlarge the trusted execution core.
+
+A semantic primitive is a typed, pure, self-contained core-APL computation identified by the hash of its canonical semantic content. A `primitive.call` is lowered deterministically to an ordinary function call before core verification, interpretation, LIR lowering, optimization, or backend compilation.
+
+Semantic primitives are therefore not textual macros and do not perform token substitution.
+
+### 20.2 module declarations
+
+Every Draft 0.0.15+ program contains an explicit `primitives` list, even when empty.
+
+At most 256 primitive declarations may appear in one module.
+
+A primitive declaration contains exactly:
+
+```json
+{
+  "id": "p_<64 lowercase hex digits>",
+  "params": [
+    {"name": "x", "type": "i64"}
+  ],
+  "returns": "i64",
+  "body": [
+    {"op": "return", "value": "x"}
+  ]
+}
+```
+
+`params`, `returns`, and `body` use the same typed semantic forms as ordinary APL functions.
+
+### 20.3 machine-generated content identity
+
+A primitive id is not user-chosen metadata.
+
+Let `D` be the primitive declaration with the `id` field removed. Define:
+
+```json
+{
+  "schema": "apl.semantic-primitive.v1",
+  "params": D.params,
+  "returns": D.returns,
+  "body": D.body
+}
+```
+
+Encode that object using the APL canonical JSON encoding defined in this specification, compute SHA-256 over the UTF-8 bytes, render the digest as 64 lowercase hexadecimal digits, and prefix it with `p_`.
+
+The verifier recomputes this value and rejects a declaration whose supplied id differs.
+
+Changing any canonical semantic field therefore changes the primitive id.
+
+The reference CLI can generate the identifier:
+
+```text
+apl primitive-id primitive-definition.json
+```
+
+### 20.4 self-contained and pure definitions
+
+Draft 0.0.15 primitive bodies are deliberately restricted to preserve content-addressability and keep dependency analysis trivial.
+
+A primitive body:
+
+- may use ordinary core APL instructions and structured regions supported by Draft 0.0.15;
+- may deterministically trap according to ordinary APL semantics;
+- must not contain `call`;
+- must not contain `primitive.call`, directly or inside nested `if`/`repeat` regions;
+- must have no inferred host effects.
+
+The deterministic lowering declares the generated hidden function with `effects: []`. Therefore any `print`, filesystem read, network read, or other host effect in the body is rejected by the existing exact-effect verifier.
+
+Draft 0.0.15 consequently has no primitive dependency graph and no primitive recursion.
+
+### 20.5 `primitive.call`
+
+A non-`unit` primitive invocation has exactly:
+
+```json
+{
+  "op": "primitive.call",
+  "id": "answer",
+  "type": "i64",
+  "primitive": "p_<64 lowercase hex digits>",
+  "args": ["x"]
+}
+```
+
+A `unit` primitive invocation has exactly:
+
+```json
+{
+  "op": "primitive.call",
+  "primitive": "p_<64 lowercase hex digits>",
+  "args": ["x"]
+}
+```
+
+The referenced primitive must exist in the module.
+
+After deterministic lowering, ordinary core function-call verification enforces exact argument count, argument types, result type, SSA binding rules, and call-site validity. No separate weaker primitive type system exists.
+
+### 20.6 deterministic lowering
+
+For every declared primitive id `p_<digest>`, lowering creates one hidden ordinary function named:
+
+```text
+__apl_primitive_<digest>
+```
+
+The generated function uses:
+
+- the primitive's exact parameter list;
+- the primitive's exact return type;
+- `effects: []`;
+- empty `requires` and `ensures`;
+- the primitive's exact body.
+
+Each `primitive.call` is replaced by an ordinary `call` to that hidden function while preserving argument order, result id, and result type.
+
+User functions in Draft 0.0.15 may not begin with the reserved prefix `__apl_primitive_`.
+
+Generated primitive functions are ordered by primitive id, making lowering deterministic regardless of declaration traversal implementation.
+
+### 20.7 resource and trap semantics
+
+A lowered `primitive.call` has ordinary function-call execution semantics.
+
+The call instruction consumes the same `steps` unit as an ordinary `call`. Executed instructions inside the primitive body consume their ordinary steps. Structured control, arithmetic traps, range checks, explicit traps, and all other core semantics are unchanged.
+
+The generated function name may appear in low-level diagnostic locations. The primitive id remains recoverable from that name.
+
+No additional host effect or capability is introduced by primitive lowering because Draft 0.0.15 primitives are pure.
+
+### 20.8 canonical identity and compiler path
+
+The source-level `primitives` declarations and `primitive.call` instructions remain part of canonical APL semantic IR and therefore participate in the source semantic hash.
+
+Interpreter, normalized LIR, optimizer, and WebAssembly backend receive the deterministically lowered core program. They require no primitive-specific execution opcode.
+
+Thus a conforming backend that already implements the Draft 0.0.14 core can execute Draft 0.0.15 semantic primitives after verified lowering.
+
+### 20.9 compatibility
+
+APL 0.0.1 through 0.0.14 do not contain a module `primitives` declaration. Declaring that field before 0.0.15 is rejected.
+
+Draft 0.0.15 programs must contain the explicit primitive list. `primitive.call` is valid only through Draft 0.0.15 primitive lowering.
+
+## 21. Verification
 
 A conforming verifier rejects at least:
 
@@ -1281,7 +1431,7 @@ A conforming verifier rejects at least:
 
 Execution is defined only for verified programs.
 
-## 21. Canonical textual representation
+## 22. Canonical textual representation
 
 The v0 canonical encoding is JSON with:
 
@@ -1295,11 +1445,11 @@ Canonical identity is SHA-256 over the UTF-8 bytes of that encoding.
 
 This is an encoding identity, not yet a proof of semantic equivalence between differently structured programs.
 
-## 22. Reference implementation
+## 23. Reference implementation
 
 The Python implementation under `src/apl` is the executable reference for the current draft. Tests under `tests/` form a growing conformance suite.
 
-## 23. Deliberately absent
+## 24. Deliberately absent
 
 Not yet defined:
 
@@ -1316,6 +1466,6 @@ Not yet defined:
 - module imports;
 - binary canonical IR;
 - optimizer/compiler backends;
-- AI-generated primitives.
+- effectful/composable semantic primitives beyond the pure self-contained Draft 0.0.15 mechanism.
 
 Conventional-language behavior for these features must not be assumed until formally specified.
