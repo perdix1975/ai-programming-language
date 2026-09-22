@@ -3402,3 +3402,93 @@ def test_lir_v014_contracts_and_invariants_are_lowered_to_guards():
     ops = list(_all_lir_ops(lir))
     assert any(op.get("op") == "guard" for op in ops)
     assert not any(op.get("op") == "invariant.check" for op in ops)
+
+
+
+def test_lir_parameter_alpha_renaming_is_normalized():
+    first = functions_if_program()
+    second = functions_if_program()
+    choose = second["functions"][0]
+    choose["params"] = [
+        {"name": "condition", "type": "bool"},
+        {"name": "left", "type": "i64"},
+        {"name": "right", "type": "i64"},
+    ]
+    choose["body"][0]["cond"] = "condition"
+    choose["body"][0]["then"][0]["value"] = "left"
+    choose["body"][0]["else"][0]["value"] = "right"
+
+    assert lower_program(first) == lower_program(second)
+
+
+def test_lir_verifier_recomputes_transitive_effects():
+    lir = lower_program(effectful_program())
+    main = next(fn for fn in lir["functions"] if fn["name"] == "main")
+    main["effects"] = []
+
+    try:
+        verify_lir(lir)
+    except VerificationError as exc:
+        assert "do not match inferred effects ['console.write']" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_lir_verifier_recomputes_module_capabilities():
+    lir = lower_program(effectful_program())
+    lir["runtime"]["capabilities"] = []
+
+    try:
+        verify_lir(lir)
+    except VerificationError as exc:
+        assert "capabilities must exactly match inferred function effects" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_lir_verifier_rejects_noncanonical_legacy_limits():
+    lir = lower_program(sample_program("0.0.1"))
+    lir["runtime"]["limits"]["steps"] = 0
+
+    try:
+        verify_lir(lir)
+    except VerificationError as exc:
+        assert "must be null before source APL 0.0.10" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_lir_verifier_rejects_spoofed_feature_version():
+    lir = lower_program(sample_program("0.0.1"))
+    main = lir["functions"][0]
+    arithmetic = next(
+        op for op in main["blocks"][0]["ops"]
+        if op.get("op") == "i64.add"
+    )
+    arithmetic["op"] = "i64.div"
+
+    try:
+        verify_lir(lir)
+    except VerificationError as exc:
+        assert "i64.div requires source APL 0.0.3+" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
+
+
+def test_lir_verifier_rejects_unknown_guard_semantics():
+    lir = lower_program(invariant_program(value=3))
+    guard = next(
+        op
+        for fn in lir["functions"]
+        for block in fn["blocks"]
+        for op in block["ops"]
+        if op.get("op") == "guard"
+    )
+    guard["code"] = "app.fake_guard"
+
+    try:
+        verify_lir(lir)
+    except VerificationError as exc:
+        assert "unsupported normalized guard code" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
