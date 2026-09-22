@@ -3492,3 +3492,22 @@ def test_lir_verifier_rejects_unknown_guard_semantics():
         assert "unsupported normalized guard code" in str(exc)
     else:
         raise AssertionError("expected VerificationError")
+
+
+
+def test_lir_verifier_preserves_explicit_trap_namespace_rules():
+    lir = lower_program(explicit_trap_program())
+    trap_term = next(
+        block["term"]
+        for fn in lir["functions"]
+        for block in fn["blocks"]
+        if block["term"].get("op") == "trap"
+    )
+    trap_term["code"] = "apl.fake"
+
+    try:
+        verify_lir(lir)
+    except VerificationError as exc:
+        assert "namespace 'apl.*' is reserved" in str(exc)
+    else:
+        raise AssertionError("expected VerificationError")
