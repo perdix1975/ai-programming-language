@@ -30,7 +30,7 @@ The executable reference core includes:
 - symbolic structural quantity types with static unit-exponent algebra and explicit attach/value conversions;
 - reusable typed module invariants for function contracts and explicit `invariant.check` assertions;
 - deterministic normalized compiler LIR 0.1 with explicit CFG/block parameters, source-step ticks, independent verification, and stable lower hashes;
-- an initial real WebAssembly 1.0 scalar backend with deterministic checked-arithmetic trap ABI;
+- a real WebAssembly 1.0 backend for verified scalar CFGs, checked arithmetic, calls, `if`, bounded `repeat`, step budgets, contracts/invariants, ranges and quantities;
 - static rejection of direct and mutual recursion in Draft 0.0.2;
 - strict verifier;
 - deterministic canonical encoding and SHA-256 identity;
@@ -119,7 +119,8 @@ Human-friendly surface syntax can be added later, but it will lower into the sam
 
 - [Language principles](docs/LANGUAGE_PRINCIPLES.md)
 - [Draft v0 specification](docs/SPEC_v0.md)
-- [Architecture](docs/ARCHITECTURE.md)\n- [Normalized compiler LIR 0.1](docs/LIR_v0.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Normalized compiler LIR 0.1](docs/LIR_v0.md)
 - [WebAssembly backend](docs/WASM_BACKEND.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Conformance testing](docs/CONFORMANCE.md)
@@ -141,7 +142,7 @@ APL semantic IR
     +--> normalized CFG LIR --> optimizer --> WASM/native/accelerator backend
 ```
 
-M3 is complete. M4 is underway: normalized CFG LIR 0.1 is implemented and the first real WebAssembly scalar backend checkpoint now emits executable `.wasm`; multi-block CFG and the remaining semantic surface are next.
+M3 is complete. M4 is underway: normalized CFG LIR 0.1 and an executable WebAssembly backend now cover scalar arithmetic, calls, structured control, step budgets, contracts/invariants, ranges and quantities. Structured data, strings, host effects and full trap diagnostics remain.
 
 ## License
 
