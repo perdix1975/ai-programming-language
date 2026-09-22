@@ -145,6 +145,7 @@ jobs:
           apl compile-wasm examples/host_io.apl /tmp/host_io.wasm
           apl compile-wasm examples/arrays.apl /tmp/arrays.wasm
           apl compile-wasm examples/records.apl /tmp/records.wasm
+          apl compile-wasm examples/wasm_struct_eq.apl /tmp/wasm_struct_eq.wasm
           apl compile-wasm examples/trap.apl /tmp/application_trap.wasm
           apl compile-wasm examples/wasm_output_limit_fail.apl /tmp/wasm_output_limit_fail.wasm
           apl compile-wasm examples/wasm_host_read_limit_fail.apl /tmp/wasm_host_read_limit_fail.wasm
@@ -215,6 +216,16 @@ jobs:
             if (recordResult !== 37n || records.state.output.join("\n") !== "37") {
               throw new Error(
                 `unexpected compiled record result/output: ${recordResult} / ${records.state.output}`
+              );
+            }
+
+            const structuredEquality = await instantiateAplWasm(
+              "/tmp/wasm_struct_eq.wasm"
+            );
+            const structEqual = structuredEquality.instance.exports.apl_entry();
+            if (structEqual !== 1) {
+              throw new Error(
+                `expected nested structural equality true, got ${structEqual}`
               );
             }
 
