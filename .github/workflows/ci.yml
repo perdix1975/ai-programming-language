@@ -68,6 +68,10 @@ jobs:
             apl verify-lir "/tmp/$example.lir.json"
           done
           test -n "$(apl lower-hash examples/invariants.apl)"
+          apl optimize-lir examples/arithmetic.apl > /tmp/arithmetic.opt.lir.json
+          apl verify-lir /tmp/arithmetic.opt.lir.json
+          apl compile-wasm examples/wasm_scalar.apl /tmp/wasm_scalar_opt_cli.wasm --optimize
+          test -s /tmp/wasm_scalar_opt_cli.wasm
       - name: Compile and execute WebAssembly scalar backend
         run: |
           apl verify examples/wasm_scalar.apl
